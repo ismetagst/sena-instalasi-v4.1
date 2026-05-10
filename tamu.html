@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>sena — tulis</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box;-webkit-tap-highlight-color:transparent;}
+html,body{min-height:100%;background:#fff;font-family:Georgia,serif;-webkit-text-size-adjust:100%;}
+.page{display:none;min-height:100vh;flex-direction:column;}
+.page.active{display:flex;}
+
+/* INTRO */
+#pg-intro{padding:60px 32px 48px;justify-content:space-between;}
+.mark{font-size:20px;opacity:.28;text-align:center;margin-bottom:44px;}
+h1{font-family:Georgia,serif;font-size:26px;font-weight:400;line-height:1.45;color:#111;margin-bottom:14px;}
+.sub{font-family:Georgia,serif;font-size:14px;color:#aaa;line-height:1.8;}
+.foot{padding-top:44px;}
+.btn-main{display:block;width:100%;padding:17px;background:#111;color:#fff;border:none;border-radius:8px;font-size:14px;letter-spacing:.08em;cursor:pointer;font-family:Georgia,serif;-webkit-appearance:none;}
+.sinfo{margin-top:14px;font-size:11px;color:#d0d0d0;text-align:center;letter-spacing:.1em;}
+
+/* WRITE */
+#pg-write{padding:36px 32px 48px;}
+.back{display:flex;align-items:center;gap:6px;font-size:12px;color:#ccc;background:none;border:none;cursor:pointer;font-family:Georgia,serif;padding:0;margin-bottom:36px;letter-spacing:.06em;-webkit-appearance:none;}
+.lbl{display:block;font-size:10px;letter-spacing:.2em;color:#ccc;text-transform:uppercase;margin-bottom:8px;font-family:Georgia,serif;}
+.inp{width:100%;border:none;border-bottom:.5px solid #efefef;background:transparent;font-family:Georgia,serif;color:#111;outline:none;padding:4px 0 12px;-webkit-appearance:none;border-radius:0;}
+.inp-name{font-size:22px;margin-bottom:32px;}
+.inp-name::placeholder{color:#e8e8e8;}
+.inp-body{font-size:15px;resize:none;line-height:1.85;min-height:160px;border-bottom:none;}
+.inp-body::placeholder{color:#e8e8e8;}
+.count{font-size:11px;color:#e0e0e0;text-align:right;margin-top:6px;font-family:Georgia,serif;}
+.divider{height:.5px;background:#f5f5f5;margin:24px 0;}
+.btn-send{width:100%;padding:17px;background:#111;color:#fff;border:none;border-radius:8px;font-size:14px;letter-spacing:.08em;cursor:pointer;font-family:Georgia,serif;transition:opacity .2s;-webkit-appearance:none;}
+.btn-send:disabled{opacity:.14;cursor:default;}
+
+/* DONE */
+#pg-done{min-height:100vh;display:none;flex-direction:column;align-items:center;justify-content:center;padding:60px 32px;text-align:center;}
+#pg-done.active{display:flex;}
+.done-mark{font-size:20px;opacity:.25;margin-bottom:32px;}
+.done-ty{font-family:Georgia,serif;font-size:12px;letter-spacing:.18em;color:#bbb;text-transform:uppercase;margin-bottom:14px;}
+.done-name{font-family:Georgia,serif;font-size:24px;font-weight:400;color:#111;margin-bottom:10px;line-height:1.3;}
+.done-body{font-family:Georgia,serif;font-size:13px;color:#aaa;line-height:1.85;font-style:italic;margin-bottom:36px;white-space:pre-wrap;max-width:280px;}
+.live{display:flex;align-items:center;gap:8px;font-size:11px;color:#ccc;letter-spacing:.1em;}
+.ldot{width:5px;height:5px;border-radius:50%;background:#ccc;animation:pu 1.5s ease-in-out infinite;}
+@keyframes pu{0%,100%{opacity:.2;}50%{opacity:1;}}
+
+/* OFFLINE */
+#offline{display:none;position:fixed;bottom:0;left:0;right:0;background:#1c1c1a;color:rgba(255,255,255,.4);font-size:11px;letter-spacing:.1em;text-align:center;padding:10px;font-family:Georgia,serif;z-index:100;}
+#offline.show{display:block;}
+</style>
+</head>
+<body>
+
+<div class="page active" id="pg-intro">
+  <div>
+    <div class="mark">(◕ᴗ◕✿)</div>
+    <h1>tulis sesuatu yang tenang.</h1>
+    <p class="sub">tulisanmu akan muncul di layar instalasi di depanmu.</p>
+  </div>
+  <div class="foot">
+    <button class="btn-main" id="btn-start">mulai menulis</button>
+    <div class="sinfo" id="sinfo">menghubungkan...</div>
+  </div>
+</div>
+
+<div class="page" id="pg-write">
+  <button class="back" id="btn-back">← kembali</button>
+
+  <label class="lbl" for="inp-name">nama / nickname</label>
+  <input class="inp inp-name" id="inp-name" placeholder="siapa kamu..." maxlength="40" autocomplete="off"/>
+
+  <label class="lbl" for="inp-body">tulisanmu</label>
+  <textarea class="inp inp-body" id="inp-body" placeholder="tulis apa yang ingin kamu katakan..." maxlength="300"></textarea>
+  <div class="count"><span id="cc">0</span> / 300</div>
+
+  <div class="divider"></div>
+  <button class="btn-send" id="btn-send" disabled>kirim ke layar →</button>
+</div>
+
+<div id="pg-done">
+  <div class="done-mark">(◕ᴗ◕✿)</div>
+  <div class="done-ty">terima kasih,</div>
+  <div class="done-name" id="done-name"></div>
+  <div class="done-body" id="done-body"></div>
+  <div class="live"><div class="ldot"></div><span>tulisanmu ada di layar sekarang</span></div>
+</div>
+
+<div id="offline">tidak terhubung — pastikan server menyala</div>
+
+<script>
+const params = new URLSearchParams(location.search);
+const sid    = params.get('sid') || 'XXXXX';
+document.getElementById('sinfo').textContent = 'sesi #' + sid;
+
+let ws = null;
+function connect() {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  ws = new WebSocket(`${proto}://${location.host}?role=guest&sid=${sid}`);
+  ws.addEventListener('open', () => {
+    document.getElementById('offline').classList.remove('show');
+    document.getElementById('sinfo').textContent = 'sesi #' + sid + ' · terhubung';
+  });
+  ws.addEventListener('message', e => {
+    if (JSON.parse(e.data).type === 'reset') {
+      goPage('pg-intro');
+      document.getElementById('inp-name').value = '';
+      document.getElementById('inp-body').value = '';
+      document.getElementById('cc').textContent = '0';
+      document.getElementById('btn-send').disabled = true;
+    }
+  });
+  ws.addEventListener('close',  () => { document.getElementById('offline').classList.add('show'); setTimeout(connect, 2500); });
+  ws.addEventListener('error',  () => document.getElementById('offline').classList.add('show'));
+}
+connect();
+
+function goPage(id) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  const el = document.getElementById(id);
+  el.classList.add('active');
+  window.scrollTo(0,0);
+}
+document.getElementById('btn-start').addEventListener('click', () => goPage('pg-write'));
+document.getElementById('btn-back').addEventListener('click',  () => goPage('pg-intro'));
+
+const inpName = document.getElementById('inp-name');
+const inpBody = document.getElementById('inp-body');
+const btnSend = document.getElementById('btn-send');
+function checkReady() { btnSend.disabled = !(inpName.value.trim() && inpBody.value.trim()); }
+inpName.addEventListener('input', checkReady);
+inpBody.addEventListener('input', () => { document.getElementById('cc').textContent=inpBody.value.length; checkReady(); });
+
+btnSend.addEventListener('click', () => {
+  const name = inpName.value.trim(), body = inpBody.value.trim();
+  if (!name || !body) return;
+  if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type:'write', sid, title:name, body }));
+  document.getElementById('done-name').textContent = name;
+  document.getElementById('done-body').textContent = body;
+  // Show done page
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById('pg-done').classList.add('active');
+  window.scrollTo(0,0);
+});
+</script>
+</body>
+</html>

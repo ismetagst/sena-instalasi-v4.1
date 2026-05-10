@@ -1,0 +1,1012 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>sena instalasi v4</title>
+<!--
+  SENA SLOWBLOG — INSTALASI v4
+
+  GESTURE FLOW:
+  1. 😐  Wajah mendekat  → buku muncul dari jauh, parallax kepala
+  2. ☝   Tahan 3 detik   → countdown 3,2,1 → LOCK aktif
+  3. ✋   5 jari          → buku terbuka (animasi organic)
+  4. ✌   2 jari (peace)  → QR muncul
+  5. ✋   5 jari lagi     → QR tutup, stay di buku terbuka
+  6. 📱  HP scan → ketik → kirim → text mirror + save DB
+  7. ☝   Tahan 3 detik   → (HANYA jika sudah ada tulisan) countdown ritual tutup
+  8. ✊   Kepalan         → buku menutup → reset tamu berikutnya
+-->
+<style>
+*{margin:0;padding:0;box-sizing:border-box;}
+html,body{width:100%;height:100%;background:#080808;overflow:hidden;font-family:Georgia,serif;}
+#stage{width:100vw;height:100vh;position:relative;overflow:hidden;}
+#cam-vid{position:fixed;top:-9999px;left:-9999px;width:320px;height:240px;}
+#gesture-canvas{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:50;}
+
+/* Status */
+#slabel{position:fixed;top:16px;left:50%;transform:translateX(-50%);font-size:9px;letter-spacing:.22em;color:rgba(255,255,255,.12);text-transform:uppercase;pointer-events:none;z-index:60;transition:color .3s;}
+#slabel.highlight{color:rgba(74,222,128,.6);}
+#ws-badge{position:fixed;top:16px;right:18px;font-size:9px;letter-spacing:.1em;color:rgba(255,255,255,.1);z-index:60;}
+
+/* Gesture badges */
+#gesture-badge{position:fixed;top:16px;left:18px;z-index:60;display:flex;flex-direction:column;gap:6px;pointer-events:none;}
+.gb-row{display:flex;align-items:center;gap:8px;}
+.gb-dot{width:5px;height:5px;border-radius:50%;background:rgba(255,255,255,.1);flex-shrink:0;transition:background .2s,box-shadow .2s;}
+.gb-dot.on{background:#4ade80;box-shadow:0 0 6px rgba(74,222,128,.5);}
+.gb-lbl{font-size:9px;letter-spacing:.12em;color:rgba(255,255,255,.15);transition:color .2s;}
+.gb-dot.on~.gb-lbl{color:rgba(255,255,255,.4);}
+
+/* Proximity bar */
+#prox-bar{position:fixed;right:12px;top:50%;transform:translateY(-50%);width:2px;height:100px;background:rgba(255,255,255,.05);border-radius:2px;z-index:60;overflow:hidden;}
+#prox-fill{position:absolute;bottom:0;left:0;right:0;background:rgba(255,255,255,.2);height:0%;border-radius:2px;transition:height .12s;}
+
+/* Far hint */
+#far-hint{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;transition:opacity 1s;z-index:10;}
+.fh-main{display:block;font-size:11px;letter-spacing:.28em;color:rgba(255,255,255,.06);text-transform:uppercase;line-height:2.8;}
+.fh-sub{display:block;font-size:9px;opacity:.4;letter-spacing:.15em;}
+
+/* COUNTDOWN ring */
+#countdown-wrap{display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);z-index:70;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;}
+#countdown-wrap.show{display:flex;}
+#cd-svg{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);}
+#ring-bg{fill:none;stroke:rgba(255,255,255,.05);stroke-width:1.5;}
+#ring-prog{fill:none;stroke-width:1.5;stroke-linecap:round;stroke-dasharray:301.6;stroke-dashoffset:301.6;transform:rotate(-90deg);transform-origin:55px 55px;transition:stroke-dashoffset .08s linear;}
+#ring-prog.open-mode{stroke:rgba(255,120,100,.7);}
+#ring-prog.lock-mode{stroke:rgba(74,222,128,.6);}
+#cd-num{font-family:Georgia,serif;font-size:68px;font-weight:400;color:rgba(255,255,255,.8);line-height:1;position:relative;z-index:1;text-shadow:0 0 40px rgba(255,255,255,.15);}
+#cd-label{font-size:9px;letter-spacing:.22em;color:rgba(255,255,255,.25);text-transform:uppercase;margin-top:10px;position:relative;z-index:1;}
+
+/* Lock badge */
+#lock-badge{display:none;position:fixed;top:14px;left:50%;transform:translateX(-50%);background:rgba(74,222,128,.12);border:.5px solid rgba(74,222,128,.3);color:rgba(74,222,128,.75);font-size:9px;letter-spacing:.18em;padding:4px 14px;border-radius:20px;z-index:70;}
+#lock-badge.show{display:block;}
+
+/* BOOK SCENE — perspective container */
+#book-scene{
+  position:absolute;top:50%;left:50%;
+  transform-origin:center center;
+  transform:translate(-50%,-50%) scale(.18);
+  opacity:0;z-index:10;
+  /* perspective applied here for 3D children */
+}
+
+/* ── CLOSED BOOK (3D box) ── */
+#closed-book{
+  position:relative;width:200px;height:270px;
+  transform-style:preserve-3d;
+  transform:rotateX(10deg) rotateY(-20deg) rotateZ(1.5deg);
+}
+.bk-front{position:absolute;inset:0;background:#1a1917;border-radius:2px 4px 4px 2px;backface-visibility:hidden;display:flex;align-items:center;justify-content:center;overflow:hidden;}
+.bk-tex{position:absolute;inset:0;opacity:.04;background:repeating-linear-gradient(90deg,transparent,transparent 12px,rgba(255,255,255,.6) 12px,rgba(255,255,255,.6) 12.5px);}
+.bk-g{position:absolute;top:10px;bottom:10px;width:1px;background:rgba(255,255,255,.06);}
+.bk-gl{left:14px;}.bk-gr{right:14px;opacity:.5;}
+.bk-sym{position:relative;z-index:1;font-size:11px;color:rgba(255,255,255,.14);letter-spacing:.14em;}
+.bk-spine{position:absolute;top:0;right:-24px;width:24px;height:270px;background:linear-gradient(180deg,#0f0f0e,#1e1c19,#0f0f0e);transform-origin:left center;transform:rotateY(90deg);backface-visibility:hidden;}
+.bk-bot{position:absolute;bottom:-16px;left:0;width:200px;height:16px;background:linear-gradient(180deg,#f0ede6,#e0ddd6);transform-origin:top center;transform:rotateX(-90deg);backface-visibility:hidden;}
+.bk-top{position:absolute;top:-12px;left:2px;width:198px;height:12px;background:linear-gradient(0deg,#e8e5de,#f0ede6);transform-origin:bottom center;transform:rotateX(90deg);backface-visibility:hidden;}
+.bpl{height:.7px;background:rgba(0,0,0,.07);margin:2px 2px;}
+
+/* ── OPEN BOOK ── */
+#open-book{position:absolute;top:0;left:-140px;width:500px;height:300px;transform-style:preserve-3d;opacity:0;pointer-events:none;}
+.ob-b2{position:absolute;bottom:-12px;left:8px;right:8px;height:8px;background:#ccc9c2;border-radius:0 0 3px 3px;z-index:-1;}
+.ob-b{position:absolute;bottom:-8px;left:4px;right:4px;height:10px;background:linear-gradient(180deg,#e8e5de,#d8d5ce);border-radius:0 0 2px 2px;}
+.ob-rp{position:absolute;right:0;top:0;width:246px;height:300px;background:#f8f7f2;border-radius:0 3px 3px 0;
+  /* subtle page curl shadow */
+  box-shadow:-4px 0 12px rgba(0,0,0,.06);}
+.ob-rpi{padding:26px 20px;height:100%;display:flex;flex-direction:column;justify-content:space-between;}
+.plines{display:flex;flex-direction:column;gap:10px;}
+.pl{height:.5px;background:#e2dfd8;transition:opacity .4s;}
+.pl.t{width:46%;background:#cbc8c0;}.pl.m{width:70%;}.pl.s{width:36%;}
+#pg-title{font-family:Georgia,serif;font-size:13px;color:#1a1a1a;min-height:16px;margin-bottom:6px;border-bottom:.5px solid #e0ddd7;padding-bottom:5px;word-break:break-word;display:none;animation:fadeInText .8s ease both;}
+#pg-body{font-family:Georgia,serif;font-size:9.5px;color:#444;line-height:1.8;white-space:pre-wrap;word-break:break-word;margin-top:4px;display:none;animation:fadeInText 1.2s ease both;}
+@keyframes fadeInText{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
+.sena-em{font-size:9px;opacity:.2;font-family:sans-serif;}
+.ob-sp{position:absolute;left:248px;top:0;width:4px;height:300px;background:linear-gradient(90deg,#c0bdb5,#e0ddd6,#c0bdb5);z-index:10;}
+.ob-sps{position:absolute;left:252px;top:0;width:14px;height:300px;background:linear-gradient(90deg,rgba(0,0,0,.05),transparent);z-index:9;}
+.ob-fan{position:absolute;left:0;top:0;width:252px;height:300px;transform-style:preserve-3d;}
+.fp{position:absolute;left:0;top:0;width:248px;height:300px;border-radius:3px 0 0 3px;transform-origin:right center;transform:rotateY(0deg);backface-visibility:hidden;transition:box-shadow .5s;}
+#fp5{background:#ece9e1;z-index:1;}
+#fp4{background:#efede6;z-index:2;}
+#fp3{background:#f2f0e9;z-index:3;}
+#fp2{background:#f5f3ec;z-index:4;}
+#fp1{background:#f8f7f2;z-index:5;}
+/* Page shadow when open */
+.ob-cov{position:absolute;left:0;top:0;width:252px;height:300px;transform-origin:right center;transform:rotateY(0deg);transform-style:preserve-3d;z-index:20;}
+.ob-cf{position:absolute;inset:0;background:#1a1917;border-radius:3px 0 0 3px;backface-visibility:hidden;display:flex;align-items:center;justify-content:center;overflow:hidden;}
+.ob-ctx{position:absolute;inset:0;opacity:.035;background:repeating-linear-gradient(90deg,transparent,transparent 12px,rgba(255,255,255,.7) 12px,rgba(255,255,255,.7) 12.5px);}
+.ob-csym{position:relative;z-index:1;font-size:11px;color:rgba(255,255,255,.15);}
+.ob-cb{position:absolute;inset:0;background:#f8f7f2;border-radius:3px 0 0 3px;backface-visibility:hidden;transform:rotateY(180deg);}
+
+/* ── PAGE FLUTTER particles (JS spawned) ── */
+.page-dust{position:fixed;pointer-events:none;border-radius:50%;z-index:45;}
+
+/* ── THANK YOU overlay ── */
+#thankyou-overlay{display:none;position:fixed;inset:0;background:rgba(8,8,8,0);flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:85;transition:background .7s ease;}
+#thankyou-overlay.show{display:flex;background:rgba(8,8,8,.88);}
+.ty-mark{font-size:16px;opacity:.35;}
+.ty-title{font-family:Georgia,serif;font-size:14px;color:rgba(255,255,255,.4);letter-spacing:.18em;text-transform:uppercase;}
+.ty-name{font-family:Georgia,serif;font-size:28px;font-weight:400;color:rgba(255,255,255,.88);}
+.ty-body{font-family:Georgia,serif;font-size:13px;color:rgba(255,255,255,.35);line-height:1.8;text-align:center;max-width:300px;font-style:italic;white-space:pre-wrap;}
+.ty-sub{font-family:Georgia,serif;font-size:10px;color:rgba(255,255,255,.2);letter-spacing:.14em;margin-top:8px;}
+
+/* ── CLOSE RITUAL badge ── */
+#close-ritual{display:none;position:fixed;bottom:60px;left:50%;transform:translateX(-50%);background:rgba(255,120,100,.1);border:.5px solid rgba(255,120,100,.3);color:rgba(255,120,100,.7);font-size:9px;letter-spacing:.16em;padding:5px 16px;border-radius:20px;z-index:70;text-align:center;}
+#close-ritual.show{display:block;}
+
+/* ── QR overlay ── */
+#qr-overlay{display:none;position:fixed;inset:0;background:rgba(8,8,8,.92);flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:80;}
+#qr-overlay.show{display:flex;}
+.qr-hint{font-size:10px;letter-spacing:.2em;color:rgba(255,255,255,.25);text-transform:uppercase;}
+#qr-frame{background:#f8f6f1;padding:14px;display:inline-flex;}
+#qr-canvas{width:120px;height:120px;}
+#qr-url{font-size:9px;color:rgba(255,255,255,.15);letter-spacing:.1em;margin-top:4px;}
+#qr-sid{font-size:9px;color:rgba(255,255,255,.1);letter-spacing:.08em;}
+
+/* ── FADE overlay ── */
+#fade-overlay{display:none;position:fixed;inset:0;background:rgba(8,8,8,0);z-index:90;pointer-events:none;transition:background .9s ease;}
+
+/* ── RIPPLE ── */
+#ripple{position:fixed;top:50%;left:50%;width:0;height:0;border-radius:50%;border:1.5px solid rgba(255,255,255,.18);transform:translate(-50%,-50%);opacity:0;pointer-events:none;z-index:55;}
+
+/* ── BOTTOM BAR ── */
+#bar{position:fixed;bottom:0;left:0;right:0;padding:10px 20px;display:flex;align-items:center;gap:10px;background:linear-gradient(transparent,rgba(0,0,0,.55));z-index:60;}
+#barhint{font-size:10px;color:rgba(255,255,255,.14);letter-spacing:.12em;flex:1;}
+.dbtn{background:rgba(255,255,255,.05);border:.5px solid rgba(255,255,255,.1);color:rgba(255,255,255,.28);font-size:10px;padding:5px 14px;border-radius:20px;cursor:pointer;font-family:Georgia,serif;letter-spacing:.08em;transition:all .2s;}
+.dbtn:hover{background:rgba(255,255,255,.1);color:rgba(255,255,255,.6);}
+.dbtn.on{background:rgba(255,255,255,.88);color:#0a0a0a;}
+.pt{position:absolute;width:1px;height:1px;background:rgba(255,255,255,.08);border-radius:50%;pointer-events:none;}
+</style>
+</head>
+<body>
+<div id="stage">
+  <video id="cam-vid" autoplay muted playsinline></video>
+  <canvas id="gesture-canvas"></canvas>
+
+  <div id="slabel">— jauh —</div>
+  <div id="ws-badge"></div>
+
+  <div id="gesture-badge">
+    <div class="gb-row"><div class="gb-dot" id="gd-face"></div><div class="gb-lbl">wajah</div></div>
+    <div class="gb-row"><div class="gb-dot" id="gd-lock"></div><div class="gb-lbl">☝ tahan 3s → lock</div></div>
+    <div class="gb-row"><div class="gb-dot" id="gd-open5"></div><div class="gb-lbl">✋ buka buku</div></div>
+    <div class="gb-row"><div class="gb-dot" id="gd-peace"></div><div class="gb-lbl">✌ qr code</div></div>
+    <div class="gb-row"><div class="gb-dot" id="gd-fist"></div><div class="gb-lbl">✊ tutup buku</div></div>
+  </div>
+
+  <div id="prox-bar"><div id="prox-fill"></div></div>
+
+  <!-- Countdown ring -->
+  <div id="countdown-wrap">
+    <svg id="cd-svg" width="110" height="110" viewBox="0 0 110 110">
+      <circle class="" id="ring-bg" cx="55" cy="55" r="48"/>
+      <circle id="ring-prog" cx="55" cy="55" r="48" class="lock-mode"/>
+    </svg>
+    <div id="cd-num">3</div>
+    <div id="cd-label">tahan telunjuk</div>
+  </div>
+
+  <div id="lock-badge">☝ lock aktif — ✋ buka buku</div>
+  <div id="close-ritual">☝ tahan → ✊ kepalan untuk menutup</div>
+
+  <div id="far-hint">
+    <span class="fh-main">mendekatlah</span>
+    <span class="fh-sub">(◕ᴗ◕✿)</span>
+  </div>
+
+  <div id="book-scene">
+    <div id="closed-book">
+      <div class="bk-front">
+        <div class="bk-tex"></div>
+        <div class="bk-g bk-gl"></div><div class="bk-g bk-gr"></div>
+        <div class="bk-sym">✦</div>
+      </div>
+      <div class="bk-spine"></div>
+      <div class="bk-bot">
+        <div class="bpl"></div><div class="bpl"></div><div class="bpl"></div><div class="bpl"></div>
+      </div>
+      <div class="bk-top"></div>
+    </div>
+
+    <div id="open-book">
+      <div class="ob-b2"></div><div class="ob-b"></div>
+      <div class="ob-rp">
+        <div class="ob-rpi">
+          <div>
+            <div id="pg-title"></div>
+            <div id="pg-body"></div>
+            <div class="plines" id="pg-lines">
+              <div class="pl t"></div><div class="pl m"></div><div class="pl"></div>
+              <div class="pl s"></div><div class="pl m"></div><div class="pl"></div>
+              <div class="pl t" style="width:42%"></div><div class="pl m"></div>
+              <div class="pl s"></div><div class="pl"></div><div class="pl m"></div>
+            </div>
+          </div>
+          <div class="sena-em">(◕ᴗ◕✿)</div>
+        </div>
+      </div>
+      <div class="ob-sps"></div><div class="ob-sp"></div>
+      <div class="ob-fan">
+        <div class="fp" id="fp5"></div><div class="fp" id="fp4"></div>
+        <div class="fp" id="fp3"></div><div class="fp" id="fp2"></div>
+        <div class="fp" id="fp1"></div>
+      </div>
+      <div class="ob-cov" id="ob-cover">
+        <div class="ob-cf"><div class="ob-ctx"></div><div class="ob-csym">✦</div></div>
+        <div class="ob-cb"></div>
+      </div>
+    </div>
+  </div>
+
+  <div id="thankyou-overlay">
+    <div class="ty-mark">(◕ᴗ◕✿)</div>
+    <div class="ty-title">terima kasih,</div>
+    <div class="ty-name" id="ty-name"></div>
+    <div class="ty-body" id="ty-body"></div>
+    <div class="ty-sub">tulisanmu ada di layar sekarang</div>
+  </div>
+
+  <div id="qr-overlay">
+    <div class="qr-hint">scan untuk menulis</div>
+    <div id="qr-frame"><canvas id="qr-canvas" width="120" height="120"></canvas></div>
+    <div id="qr-url"></div><div id="qr-sid"></div>
+    <div class="qr-hint" style="font-size:9px;margin-top:4px;opacity:.5">✌ peace lagi untuk tutup qr</div>
+  </div>
+
+  <div id="fade-overlay"></div>
+  <div id="ripple"></div>
+
+  <div id="bar">
+    <span id="barhint">— aktifkan webcam untuk mulai —</span>
+    <button class="dbtn" id="btn-cam">aktifkan webcam</button>
+    <button class="dbtn" id="btn-reset">reset</button>
+  </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/face_mesh.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@mediapipe/hands/hands.js" crossorigin="anonymous"></script>
+<script>
+/* ═══════════════════════════════════
+   CONFIG
+═══════════════════════════════════ */
+const WS_URL = (() => {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  const host  = location.hostname === 'localhost' ? 'localhost:3000' : location.host;
+  return `${proto}://${host}`;
+})();
+const GUEST_BASE = location.hostname === 'localhost'
+  ? 'http://localhost:3000'
+  : `${location.protocol}//${location.host}`;
+
+const LOCK_DURATION  = 3000; // ms — tahan telunjuk untuk lock/close ritual
+const CIRCUMFERENCE  = 301.6; // 2π×48
+
+/* ═══════════════════════════════════
+   STATE
+═══════════════════════════════════ */
+let sessionId = sessionStorage.getItem('sena_sid') || newSid();
+let ws = null, camMode = false;
+let faceDet = null, handsDet = null, mpCam = null;
+
+// Proximity & parallax
+let prox = 0, targetProx = 0;
+let faceX = 0, smoothFX = 0;
+let wigT  = 0;
+
+// Book animation state — all continuous values driven by main loop
+let isOpen   = false;
+let openProg = 0;        // 0=closed → 1=fully open
+let coverAng = 0;
+let fanAngs  = [0,0,0,0,0];
+
+// Page open spring values — for organic feel
+let coverVel = 0;
+let fanVels  = [0,0,0,0,0];
+
+// Slight floating on open book
+let floatPhase = 0;
+
+// Gesture
+let gesture = 'none'; // none | pointing | open5 | peace | fist
+let lastHandLM = null;
+
+// Phase machine:
+// idle → locked → opening → open → waiting_close → closing → done(reset)
+let phase = 'idle';
+let hasWritten = false;  // true only after text received from HP
+
+// Countdown (shared for lock + close ritual)
+let holdActive    = false;
+let holdStartTime = null;
+let holdInterval  = null;
+let holdMode      = 'lock'; // 'lock' | 'close'
+
+// Peace/QR countdown state
+let peaceCooldown    = 0;
+let qrVisible        = false;
+let qrPhase          = 'idle'; // idle | opening | open | closing
+let qrHoldStart      = null;
+let qrHoldInterval   = null;
+const QR_HOLD_MS     = 3000;
+let peaceBlinkT      = 0;
+
+// Fist close gate — must hold ☝ first, then fist
+let closeGate = false; // true after close countdown completes
+let fistCooldown = 0;
+
+/* ═══════════════════════════════════
+   ELEMENTS
+═══════════════════════════════════ */
+const scene      = document.getElementById('book-scene');
+const closedBook = document.getElementById('closed-book');
+const openBook   = document.getElementById('open-book');
+const obCover    = document.getElementById('ob-cover');
+const farHint    = document.getElementById('far-hint');
+const proxFill   = document.getElementById('prox-fill');
+const gCanvas    = document.getElementById('gesture-canvas');
+const gCtx       = gCanvas.getContext('2d');
+const slabel     = document.getElementById('slabel');
+const lockBadge  = document.getElementById('lock-badge');
+const closeRitual= document.getElementById('close-ritual');
+const cdWrap     = document.getElementById('countdown-wrap');
+const cdNum      = document.getElementById('cd-num');
+const cdLabel    = document.getElementById('cd-label');
+const ringProg   = document.getElementById('ring-prog');
+const fps        = [1,2,3,4,5].map(i => document.getElementById('fp'+i));
+
+const gdFace  = document.getElementById('gd-face');
+const gdLock  = document.getElementById('gd-lock');
+const gdOpen5 = document.getElementById('gd-open5');
+const gdPeace = document.getElementById('gd-peace');
+const gdFist  = document.getElementById('gd-fist');
+
+/* ═══════════════════════════════════
+   WEBSOCKET
+═══════════════════════════════════ */
+function connectWS() {
+  try {
+    ws = new WebSocket(`${WS_URL}?role=desktop&sid=${sessionId}`);
+    ws.onopen = () => {
+      document.getElementById('ws-badge').textContent = '#' + sessionId;
+      refreshQR();
+    };
+    ws.onmessage = e => {
+      const msg = JSON.parse(e.data);
+      if (msg.type === 'guest_joined') hint('— tamu terhubung —');
+      if (msg.type === 'write')        receiveText(msg.title, msg.body);
+    };
+    ws.onclose = () => setTimeout(connectWS, 2500);
+  } catch(_) {}
+}
+
+/* ═══════════════════════════════════
+   CANVAS RESIZE
+═══════════════════════════════════ */
+function resizeCanvas() { gCanvas.width = innerWidth; gCanvas.height = innerHeight; }
+resizeCanvas();
+window.addEventListener('resize', resizeCanvas);
+
+/* ═══════════════════════════════════
+   MAIN LOOP
+═══════════════════════════════════ */
+(function loop() {
+  wigT += 0.018;
+  floatPhase += 0.012;
+  prox     += (targetProx - prox) * 0.04;
+  smoothFX += (faceX - smoothFX)  * 0.04;
+  if (peaceCooldown > 0) peaceCooldown--;
+  if (fistCooldown  > 0) fistCooldown--;
+
+  // Scale: far=0.18 → close=0.9
+  const scaleT  = easeOut(Math.min(1, prox));
+  const scale   = lerp(0.18, 1.05, scaleT);
+  const opacity = Math.max(0, Math.min(1, (prox - 0.1) / 0.18));
+  scene.style.opacity = opacity.toFixed(3);
+  farHint.style.opacity = Math.max(0, 1 - prox * 5).toFixed(3);
+
+  // Parallax X from face position
+  const parallaxX = -smoothFX * 55;
+
+  // Ambient wiggle — very subtle
+  const breathY = Math.sin(wigT * 0.45) * 0.25;
+  const breathZ = Math.cos(wigT * 0.28) * 0.15;
+
+  // ── OPEN ANIMATION — spring physics ──
+  const openTarget = isOpen ? 1 : 0;
+
+  if (isOpen) {
+    // Spring towards open
+    // Cover: spring to -166
+    const coverTarget = -166;
+    const coverForce  = (coverTarget - coverAng) * 0.035;
+    coverVel = (coverVel + coverForce) * 0.82;
+    coverAng += coverVel;
+
+    // Fan pages: staggered springs with slight overshoot
+    const fanTargets = [-7, -15, -24, -33, -42];
+    fps.forEach((fp, i) => {
+      const delay  = i * 0.08;
+      const tgt    = fanTargets[i];
+      const force  = (tgt - fanAngs[i]) * (0.028 + i * 0.004);
+      fanVels[i]   = (fanVels[i] + force) * (0.80 - i * 0.01);
+      fanAngs[i]  += fanVels[i];
+      fp.style.transform = `rotateY(${fanAngs[i].toFixed(2)}deg)`;
+    });
+
+    // Floating motion on open book
+    const floatY = Math.sin(floatPhase) * 3;
+    const floatRX = Math.sin(floatPhase * 0.7) * 0.4 + breathY;
+  } else {
+    // Spring towards closed
+    const coverForce = (0 - coverAng) * 0.05;
+    coverVel = (coverVel + coverForce) * 0.78;
+    coverAng += coverVel;
+
+    fps.forEach((fp, i) => {
+      const force  = (0 - fanAngs[i]) * 0.06;
+      fanVels[i]   = (fanVels[i] + force) * 0.78;
+      fanAngs[i]  += fanVels[i];
+      fp.style.transform = `rotateY(${fanAngs[i].toFixed(2)}deg)`;
+    });
+  }
+  obCover.style.transform = `rotateY(${coverAng.toFixed(2)}deg)`;
+
+  // openProg for closed↔open swap (lerp from coverAng)
+  openProg = Math.max(0, Math.min(1, Math.abs(coverAng) / 166));
+
+  if (openProg < 0.07) {
+    closedBook.style.opacity = '1'; openBook.style.opacity = '0';
+  } else if (openProg < 0.22) {
+    const t = (openProg - 0.07) / 0.15;
+    closedBook.style.opacity = (1-t).toFixed(3); openBook.style.opacity = t.toFixed(3);
+  } else {
+    closedBook.style.opacity = '0'; openBook.style.opacity = '1';
+  }
+
+  // Float on open book
+  const floatY  = isOpen ? Math.sin(floatPhase) * 2.5 : 0;
+  const floatRX = isOpen ? (Math.sin(floatPhase * 0.65) * 0.35 + breathY) : breathY;
+
+  scene.style.transform = [
+    `translate(calc(-50% + ${parallaxX.toFixed(1)}px), calc(-50% + ${floatY.toFixed(1)}px))`,
+    `scale(${scale.toFixed(4)})`,
+    `rotateX(${floatRX.toFixed(3)}deg)`,
+    `rotateZ(${breathZ.toFixed(3)}deg)`,
+  ].join(' ');
+
+  proxFill.style.height = (Math.min(1, prox) * 100).toFixed(1) + '%';
+  drawOverlay();
+  requestAnimationFrame(loop);
+})();
+
+/* ═══════════════════════════════════
+   GESTURE OVERLAY CANVAS
+═══════════════════════════════════ */
+function drawOverlay() {
+  gCtx.clearRect(0, 0, gCanvas.width, gCanvas.height);
+  if (!lastHandLM || !camMode) return;
+
+  const lm = lastHandLM;
+  const W  = gCanvas.width, H = gCanvas.height;
+  const px = lmk => (1 - lmk.x) * W;
+  const py = lmk => lmk.y * H;
+
+  // Thin skeleton
+  const CONN = [
+    [0,1],[1,2],[2,3],[3,4],
+    [0,5],[5,6],[6,7],[7,8],
+    [0,9],[9,10],[10,11],[11,12],
+    [0,13],[13,14],[14,15],[15,16],
+    [0,17],[17,18],[18,19],[19,20],
+    [5,9],[9,13],[13,17]
+  ];
+  gCtx.strokeStyle = 'rgba(255,255,255,.09)'; gCtx.lineWidth = 1; gCtx.setLineDash([]);
+  CONN.forEach(([a,b]) => {
+    gCtx.beginPath();
+    gCtx.moveTo(px(lm[a]),py(lm[a]));
+    gCtx.lineTo(px(lm[b]),py(lm[b]));
+    gCtx.stroke();
+  });
+  lm.forEach(lmk => {
+    gCtx.fillStyle='rgba(255,255,255,.06)';
+    gCtx.beginPath(); gCtx.arc(px(lmk),py(lmk),2,0,Math.PI*2); gCtx.fill();
+  });
+
+  // ☝ Pointing — subtle glow dot on tip only
+  if (gesture === 'pointing') {
+    const tip = lm[8];
+    const col = holdActive ? 'rgba(74,222,128,.9)' : 'rgba(255,255,255,.45)';
+    gCtx.save();
+    gCtx.shadowColor = holdActive ? '#4ade80' : 'rgba(255,255,255,.3)';
+    gCtx.shadowBlur  = holdActive ? 14 : 6;
+    gCtx.fillStyle   = col;
+    gCtx.beginPath(); gCtx.arc(px(tip),py(tip),7,0,Math.PI*2); gCtx.fill();
+    gCtx.restore();
+  }
+
+  // ✌ Peace — two finger tips, blink when counting
+  if (gesture === 'peace') {
+    peaceBlinkT += 0.18;
+    const blink = (qrPhase === 'opening' || qrPhase === 'closing')
+      ? 0.3 + Math.abs(Math.sin(peaceBlinkT * 6)) * 0.7
+      : 0.6;
+    [8,12].forEach(i => {
+      gCtx.save();
+      gCtx.shadowColor=`rgba(74,222,128,${blink})`; gCtx.shadowBlur=12;
+      gCtx.fillStyle=`rgba(74,222,128,${blink})`;
+      gCtx.beginPath(); gCtx.arc(px(lm[i]),py(lm[i]),6,0,Math.PI*2); gCtx.fill();
+      gCtx.restore();
+    });
+    // Draw countdown arc around index tip
+    if ((qrPhase === 'opening' || qrPhase === 'closing') && qrHoldStart) {
+      const prog = Math.min(1, (Date.now() - qrHoldStart) / QR_HOLD_MS);
+      const tip  = lm[8];
+      const tx   = px(tip), ty = py(tip);
+      gCtx.save();
+      gCtx.strokeStyle = qrPhase === 'opening' ? 'rgba(74,222,128,.8)' : 'rgba(255,180,80,.8)';
+      gCtx.lineWidth   = 2;
+      gCtx.shadowColor = gCtx.strokeStyle; gCtx.shadowBlur = 8;
+      gCtx.beginPath();
+      gCtx.arc(tx, ty, 18, -Math.PI/2, -Math.PI/2 + Math.PI*2*prog);
+      gCtx.stroke();
+      gCtx.restore();
+    }
+  } else {
+    peaceBlinkT = 0;
+  }
+
+  // ✋ Open5 — all fingertips
+  if (gesture === 'open5') {
+    [4,8,12,16,20].forEach(i => {
+      gCtx.save();
+      gCtx.shadowColor='rgba(74,222,128,.4)'; gCtx.shadowBlur=8;
+      gCtx.fillStyle='rgba(74,222,128,.5)';
+      gCtx.beginPath(); gCtx.arc(px(lm[i]),py(lm[i]),6,0,Math.PI*2); gCtx.fill();
+      gCtx.restore();
+    });
+  }
+
+  // ✊ Fist — dim circle on wrist
+  if (gesture === 'fist') {
+    const w = lm[0];
+    const col = closeGate ? 'rgba(255,120,100,.8)' : 'rgba(255,255,255,.2)';
+    gCtx.strokeStyle=col; gCtx.lineWidth=1.5;
+    gCtx.beginPath(); gCtx.arc(px(w),py(w),22,0,Math.PI*2); gCtx.stroke();
+  }
+}
+
+/* ═══════════════════════════════════
+   FACE MESH → PROXIMITY + PARALLAX
+═══════════════════════════════════ */
+function onFace(res) {
+  if (!res.multiFaceLandmarks?.length) {
+    targetProx = Math.max(0, targetProx - 0.01);
+    gdFace.classList.remove('on'); return;
+  }
+  gdFace.classList.add('on');
+  const lm = res.multiFaceLandmarks[0];
+  const lc = lm[234], rc = lm[454];
+  if (!lc||!rc) return;
+  const fw = Math.abs(rc.x - lc.x);
+  targetProx = Math.max(0, Math.min(1, (fw - 0.07) / (0.40 - 0.07)));
+  const nose = lm[1];
+  if (nose) faceX = (0.5 - nose.x) * 2.4; // parallax: face left→book right
+}
+
+/* ═══════════════════════════════════
+   HAND CLASSIFY
+═══════════════════════════════════ */
+function classifyHand(lm) {
+  const th=lm[4], it=lm[8], ip=lm[6];
+  const mt=lm[12], mp=lm[10];
+  const rt=lm[16], rp=lm[14];
+  const pt=lm[20], pp=lm[18];
+
+  const iExt = it.y < ip.y - 0.030;
+  const mExt = mt.y < mp.y - 0.026;
+  const rExt = rt.y < rp.y - 0.022;
+  const pExt = pt.y < pp.y - 0.018;
+
+  const pinchD = Math.hypot(th.x-it.x, th.y-it.y);
+  const isPinch = pinchD < 0.065;
+
+  if (isPinch)                    return 'pinch';
+  if (iExt && mExt && rExt && pExt) return 'open5';
+  if (iExt && mExt && !rExt && !pExt && !isPinch) return 'peace'; // ✌
+  if (iExt && !mExt && !rExt && !pExt && !isPinch) return 'pointing'; // ☝
+  if (!iExt && !mExt && !rExt && !pExt && !isPinch) return 'fist'; // ✊
+  return 'none';
+}
+
+/* ═══════════════════════════════════
+   HANDS CALLBACK
+═══════════════════════════════════ */
+function onHands(res) {
+  if (!res.multiHandLandmarks?.length) {
+    lastHandLM = null;
+    gesture = 'none';
+    [gdLock,gdOpen5,gdPeace,gdFist].forEach(d=>d.classList.remove('on'));
+    cancelHold();
+    // if QR visible & peace gone, leave it open — user must peace again to close
+    return;
+  }
+
+  const lm = lastHandLM = res.multiHandLandmarks[0];
+  gesture = classifyHand(lm);
+
+  gdLock.classList.toggle('on',  gesture==='pointing');
+  gdOpen5.classList.toggle('on', gesture==='open5');
+  gdPeace.classList.toggle('on', gesture==='peace');
+  gdFist.classList.toggle('on',  gesture==='fist');
+
+  /* ── PHASE: idle ──
+     ☝ Tahan 3s → lock */
+  if (phase === 'idle') {
+    if (gesture === 'pointing' && prox > 0.45) {
+      if (!holdActive) startHold('lock');
+    } else {
+      cancelHold();
+    }
+  }
+
+  /* ── PHASE: locked ──
+     ✋ 5 jari → buka buku */
+  if (phase === 'locked') {
+    if (gesture === 'open5') triggerOpen();
+    if (gesture !== 'pointing') cancelHold();
+  }
+
+  /* ── PHASE: open ──
+     ✌ peace → toggle QR
+     ✋ open5 → close QR (if open)
+     ☝ tahan 3s (hanya jika hasWritten) → close ritual */
+  if (phase === 'open') {
+    // Peace ✌ → start QR countdown (open or close)
+    if (gesture === 'peace') {
+      if (qrPhase === 'idle') startQRHold('opening');
+      else if (qrPhase === 'open') startQRHold('closing');
+      // if already counting, keep going
+    } else {
+      // Not peace anymore — cancel any in-progress countdown
+      if (qrPhase === 'opening' || qrPhase === 'closing') cancelQRHold();
+    }
+    // open5 while QR showing → cancel close countdown, stay open
+    if (gesture === 'open5' && qrPhase === 'open') cancelQRHold();
+    // Close ritual: only if text received
+    if (gesture === 'pointing' && hasWritten) {
+      if (!holdActive) startHold('close');
+    } else if (gesture !== 'pointing') {
+      if (holdMode === 'close') cancelHold();
+    }
+  }
+
+  /* ── PHASE: waiting_close ──
+     ✊ kepalan → tutup buku */
+  if (phase === 'waiting_close') {
+    if (gesture === 'fist' && fistCooldown === 0) {
+      fistCooldown = 40;
+      triggerClose();
+    }
+    // Cancel if pointing again
+    if (gesture !== 'fist' && gesture !== 'none') {
+      // stay in waiting_close, just wait for fist
+    }
+  }
+}
+
+/* ═══════════════════════════════════
+   HOLD COUNTDOWN (lock + close)
+═══════════════════════════════════ */
+function startHold(mode) {
+  if (holdActive && holdMode === mode) return;
+  holdActive    = true;
+  holdMode      = mode;
+  holdStartTime = Date.now();
+
+  cdNum.textContent    = '3';
+  cdLabel.textContent  = mode === 'lock' ? 'tahan telunjuk' : 'siap menutup...';
+  ringProg.className   = mode === 'lock' ? 'lock-mode' : 'open-mode';
+  ringProg.style.strokeDashoffset = CIRCUMFERENCE;
+  cdWrap.classList.add('show');
+
+  clearInterval(holdInterval);
+  holdInterval = setInterval(() => {
+    if (!holdActive) { clearInterval(holdInterval); return; }
+    const progress  = Math.min(1, (Date.now() - holdStartTime) / LOCK_DURATION);
+    const remaining = Math.ceil(3 - progress * 3);
+    ringProg.style.strokeDashoffset = (CIRCUMFERENCE * (1 - progress)).toFixed(2);
+    cdNum.textContent = remaining > 0 ? remaining : '✓';
+    if (progress >= 1) {
+      clearInterval(holdInterval);
+      holdActive = false;
+      cdWrap.classList.remove('show');
+      if (mode === 'lock')  completeLock();
+      else                  completeCloseRitual();
+    }
+  }, 50);
+}
+
+function cancelHold() {
+  if (!holdActive) return;
+  holdActive = false;
+  clearInterval(holdInterval);
+  cdWrap.classList.remove('show');
+}
+
+function completeLock() {
+  phase = 'locked';
+  lockBadge.classList.add('show');
+  hint('— ✋ buka 5 jari untuk membuka buku —');
+  setSlabel('— lock aktif —', true);
+}
+
+function completeCloseRitual() {
+  phase     = 'waiting_close';
+  closeGate = true;
+  closeRitual.classList.add('show');
+  closeRitual.textContent = '✊ kepalan sekarang untuk menutup';
+  hint('— ✊ kepalkan tangan untuk menutup —');
+  setSlabel('— siap menutup —', false);
+}
+
+/* ═══════════════════════════════════
+   BOOK ACTIONS
+═══════════════════════════════════ */
+function triggerOpen() {
+  if (isOpen) return;
+  isOpen  = true;
+  phase   = 'open';
+  lockBadge.classList.remove('show');
+  // Spawn dust particles for organic feel
+  spawnPageDust();
+  doRipple();
+  hint('— ✌ 2 jari untuk QR code —');
+  setSlabel('— terbuka —', true);
+}
+
+function triggerClose() {
+  const ov = document.getElementById('fade-overlay');
+  ov.style.display = 'block';
+  ov.style.background = 'rgba(8,8,8,0)';
+  ov.style.transition = 'background .9s ease';
+  requestAnimationFrame(() => ov.style.background = 'rgba(8,8,8,.96)');
+  setTimeout(() => {
+    fullReset();
+    ov.style.background = 'rgba(8,8,8,0)';
+    setTimeout(() => ov.style.display='none', 800);
+  }, 1000);
+}
+
+/* Page dust particles on book open */
+function spawnPageDust() {
+  const r = scene.getBoundingClientRect();
+  const cx = r.left + r.width * 0.35;
+  const cy = r.top  + r.height * 0.5;
+  for (let i = 0; i < 18; i++) {
+    const d  = document.createElement('div');
+    d.className = 'page-dust';
+    const size = 1 + Math.random() * 2.5;
+    const angle = Math.random() * Math.PI * 2;
+    const dist  = 30 + Math.random() * 90;
+    const dur   = 800 + Math.random() * 600;
+    const sx = cx + Math.cos(angle) * 10;
+    const sy = cy + Math.sin(angle) * 10;
+    d.style.cssText = `left:${sx}px;top:${sy}px;width:${size}px;height:${size}px;
+      background:rgba(255,255,255,${(0.06+Math.random()*0.12).toFixed(2)});
+      transition:transform ${dur}ms ease,opacity ${dur}ms ease;`;
+    document.getElementById('stage').appendChild(d);
+    requestAnimationFrame(() => {
+      d.style.transform = `translate(${Math.cos(angle)*dist}px,${Math.sin(angle)*dist-20}px)`;
+      d.style.opacity = '0';
+    });
+    setTimeout(() => d.remove(), dur + 100);
+  }
+}
+
+function doRipple() {
+  const r = document.getElementById('ripple');
+  r.style.cssText = 'position:fixed;top:50%;left:50%;width:0;height:0;border-radius:50%;border:1.5px solid rgba(255,255,255,.18);transform:translate(-50%,-50%);opacity:1;pointer-events:none;z-index:55;transition:width .7s ease,height .7s ease,opacity .7s ease;';
+  setTimeout(() => { r.style.width='300px'; r.style.height='300px'; r.style.opacity='0'; }, 10);
+}
+
+function setSlabel(text, green) {
+  slabel.textContent = text;
+  slabel.classList.toggle('highlight', !!green);
+}
+
+/* ═══════════════════════════════════
+   QR COUNTDOWN (peace hold 3s)
+═══════════════════════════════════ */
+function startQRHold(mode) {
+  if (qrHoldInterval) return; // already running
+  qrPhase    = mode;
+  qrHoldStart = Date.now();
+  hint(mode === 'opening' ? '— ✌ tahan untuk buka QR... —' : '— ✌ tahan untuk tutup QR... —');
+
+  qrHoldInterval = setInterval(() => {
+    const progress = (Date.now() - qrHoldStart) / QR_HOLD_MS;
+    if (progress >= 1) {
+      clearInterval(qrHoldInterval); qrHoldInterval = null;
+      if (qrPhase === 'opening') {
+        qrPhase = 'open';
+        showQR();
+        hint('— ✌ tahan 3s untuk tutup QR —');
+      } else if (qrPhase === 'closing') {
+        qrPhase = 'idle';
+        hideQR();
+        hint('— ✌ 2 jari untuk QR code —');
+      }
+    }
+  }, 50);
+}
+
+function cancelQRHold() {
+  if (qrHoldInterval) { clearInterval(qrHoldInterval); qrHoldInterval = null; }
+  // Revert phase if mid-countdown
+  if (qrPhase === 'opening') { qrPhase = 'idle'; hint('— ✌ 2 jari untuk QR code —'); }
+  if (qrPhase === 'closing') { qrPhase = 'open'; hint('— ✌ tahan 3s untuk tutup QR —'); }
+}
+
+/* ═══════════════════════════════════
+   QR
+═══════════════════════════════════ */
+function guestURL() { return `${GUEST_BASE}/tamu?sid=${sessionId}`; }
+function showQR()   { qrVisible=true; refreshQR(); document.getElementById('qr-overlay').classList.add('show'); }
+function hideQR()   { qrVisible=false; document.getElementById('qr-overlay').classList.remove('show'); }
+function refreshQR() {
+  const url = guestURL();
+  document.getElementById('qr-url').textContent = url;
+  document.getElementById('qr-sid').textContent = 'sesi #'+sessionId;
+  document.getElementById('ws-badge').textContent = '#'+sessionId;
+  drawQR(url);
+}
+function drawQR(url) {
+  const c=document.getElementById('qr-canvas'), ctx=c.getContext('2d');
+  const sz=120,cells=25,cell=sz/cells;
+  ctx.fillStyle='#f8f6f1'; ctx.fillRect(0,0,sz,sz); ctx.fillStyle='#1a1917';
+  const h=[...url].reduce((a,ch)=>(a*31+ch.charCodeAt(0))|0,0);
+  for(let r=0;r<cells;r++) for(let c2=0;c2<cells;c2++){
+    let v=0;
+    if(r<7&&c2<7) v=fc(r,c2);
+    else if(r<7&&c2>=cells-7) v=fc(r,c2-(cells-7));
+    else if(r>=cells-7&&c2<7) v=fc(r-(cells-7),c2);
+    else if(r===6||c2===6) v=(r+c2)%2===0?1:0;
+    else v=((h^(r*c2*7+c2*13+r*17))>>((r+c2)%8))&1;
+    if(v) ctx.fillRect(Math.round(c2*cell),Math.round(r*cell),Math.ceil(cell),Math.ceil(cell));
+  }
+}
+function fc(r,c){return(r===0||r===6||c===0||c===6)?1:(r>=2&&r<=4&&c>=2&&c<=4)?1:0;}
+
+/* ═══════════════════════════════════
+   RECEIVE TEXT
+═══════════════════════════════════ */
+function receiveText(title, body) {
+  document.getElementById('pg-title').textContent=title; document.getElementById('pg-title').style.display='block';
+  document.getElementById('pg-body').textContent=body;   document.getElementById('pg-body').style.display='block';
+  document.getElementById('pg-lines').style.display='none';
+  hasWritten = true;
+  hideQR();
+
+  // Save to dashboard DB via server
+  if (ws?.readyState===1) {
+    ws.send(JSON.stringify({ type:'save', sid:sessionId, title, body, ts: Date.now() }));
+  }
+
+  // Thank you overlay
+  document.getElementById('ty-name').textContent = title;
+  document.getElementById('ty-body').textContent = body;
+  const ty = document.getElementById('thankyou-overlay');
+  ty.classList.add('show');
+  setTimeout(() => {
+    ty.classList.remove('show');
+    hint('— ☝ tahan 3 detik untuk ritual menutup —');
+    setSlabel('— tulisan ada di halaman —', true);
+    closeRitual.classList.add('show');
+  }, 4000);
+}
+
+/* ═══════════════════════════════════
+   FULL RESET
+═══════════════════════════════════ */
+function fullReset() {
+  isOpen=false; openProg=0;
+  coverAng=0; coverVel=0;
+  fanAngs=[0,0,0,0,0]; fanVels=[0,0,0,0,0];
+  targetProx=0; prox=0; faceX=0; smoothFX=0;
+  gesture='none'; peaceCooldown=0; fistCooldown=0;
+  qrPhase='idle'; if(qrHoldInterval){clearInterval(qrHoldInterval);qrHoldInterval=null;} peaceBlinkT=0;
+  qrVisible=false; lastHandLM=null;
+  phase='idle'; hasWritten=false; closeGate=false;
+  holdActive=false; holdMode='lock';
+  clearInterval(holdInterval);
+  cdWrap.classList.remove('show');
+  lockBadge.classList.remove('show');
+  closeRitual.classList.remove('show');
+  hideQR();
+  document.getElementById('thankyou-overlay').classList.remove('show');
+  document.getElementById('pg-title').textContent=''; document.getElementById('pg-title').style.display='none';
+  document.getElementById('pg-body').textContent='';  document.getElementById('pg-body').style.display='none';
+  document.getElementById('pg-lines').style.display='flex';
+  [gdLock,gdOpen5,gdPeace,gdFist].forEach(d=>d.classList.remove('on'));
+  setSlabel('— jauh —', false);
+  sessionId = newSid(); refreshQR();
+  if (ws?.readyState===1) ws.send(JSON.stringify({type:'reset',sid:sessionId}));
+  hint('— siap untuk tamu berikutnya —');
+  setTimeout(() => hint('— mendekati kamera —'), 2500);
+}
+
+/* ═══════════════════════════════════
+   WEBCAM
+═══════════════════════════════════ */
+document.getElementById('btn-cam').addEventListener('click', async () => {
+  if (camMode) { stopCam(); return; }
+  await startCam();
+});
+
+async function startCam() {
+  hint('— memuat MediaPipe... —');
+  try {
+    faceDet = new FaceMesh({ locateFile: f=>`https://cdn.jsdelivr.net/npm/@mediapipe/face_mesh/${f}` });
+    faceDet.setOptions({ maxNumFaces:1, refineLandmarks:false, minDetectionConfidence:.5, minTrackingConfidence:.5 });
+    faceDet.onResults(onFace);
+
+    handsDet = new Hands({ locateFile: f=>`https://cdn.jsdelivr.net/npm/@mediapipe/hands/${f}` });
+    handsDet.setOptions({ maxNumHands:1, modelComplexity:0, minDetectionConfidence:.72, minTrackingConfidence:.68 });
+    handsDet.onResults(onHands);
+
+    let frame = 0;
+    const vid = document.getElementById('cam-vid');
+    mpCam = new Camera(vid, {
+      onFrame: async () => {
+        frame++;
+        // Face every 3 frames, hands every other frame
+        if      (frame % 3 === 0) await faceDet.send({ image: vid });
+        else                       await handsDet.send({ image: vid });
+      },
+      width: 320, height: 240, facingMode: 'user'
+    });
+    await mpCam.start();
+    camMode = true;
+    document.getElementById('btn-cam').textContent = 'stop webcam';
+    document.getElementById('btn-cam').classList.add('on');
+    hint('— mendekati kamera —');
+  } catch(e) {
+    hint('— gagal: ' + e.message + ' —'); console.error(e);
+  }
+}
+
+function stopCam() {
+  mpCam?.stop(); faceDet?.close(); handsDet?.close();
+  mpCam=null; faceDet=null; handsDet=null;
+  camMode=false; targetProx=0; lastHandLM=null; gesture='none';
+  cancelHold();
+  [gdFace,gdLock,gdOpen5,gdPeace,gdFist].forEach(d=>d.classList.remove('on'));
+  document.getElementById('btn-cam').textContent='aktifkan webcam';
+  document.getElementById('btn-cam').classList.remove('on');
+  hint('— aktifkan webcam untuk mulai —');
+}
+
+document.getElementById('btn-reset').addEventListener('click', fullReset);
+
+/* ═══════════════════════════════════
+   UTILS
+═══════════════════════════════════ */
+function easeOut(t) { return 1-Math.pow(1-t,3); }
+function lerp(a,b,t) { return a+(b-a)*t; }
+function hint(t) { document.getElementById('barhint').textContent = t; }
+function newSid() { const s=Math.random().toString(36).slice(2,7).toUpperCase(); sessionStorage.setItem('sena_sid',s); return s; }
+
+/* ═══════════════════════════════════
+   INIT
+═══════════════════════════════════ */
+connectWS();
+refreshQR();
+for(let i=0;i<24;i++){
+  const p=document.createElement('div'); p.className='pt';
+  p.style.left=Math.random()*100+'%'; p.style.top=Math.random()*100+'%';
+  p.style.opacity=(Math.random()*.1).toFixed(2);
+  document.getElementById('stage').appendChild(p);
+}
+</script>
+</body>
+</html>
