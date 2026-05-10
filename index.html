@@ -137,7 +137,7 @@ html,body{width:100%;height:100%;background:#080808;overflow:hidden;font-family:
 #qr-overlay{display:none;position:fixed;inset:0;background:rgba(8,8,8,.92);flex-direction:column;align-items:center;justify-content:center;gap:20px;z-index:80;}
 #qr-overlay.show{display:flex;}
 .qr-hint{font-size:10px;letter-spacing:.2em;color:rgba(255,255,255,.25);text-transform:uppercase;}
-#qr-frame{background:#f8f6f1;padding:14px;display:inline-flex;align-items:center;justify-content:center;} #qr-canvas{width:150px;height:150px;} #qr-canvas img{display:block!important;width:150px!important;height:150px!important;} #qr-canvas table{margin:0 auto;}
+#qr-frame{background:#f8f6f1;padding:14px;display:inline-flex;align-items:center;justify-content:center;} #qr-canvas svg{display:block;}
 #qr-canvas{width:120px;height:120px;}
 #qr-url{font-size:9px;color:rgba(255,255,255,.15);letter-spacing:.1em;margin-top:4px;}
 #qr-sid{font-size:9px;color:rgba(255,255,255,.1);letter-spacing:.08em;}
@@ -156,7 +156,8 @@ html,body{width:100%;height:100%;background:#080808;overflow:hidden;font-family:
 .dbtn.on{background:rgba(255,255,255,.88);color:#0a0a0a;}
 .pt{position:absolute;width:1px;height:1px;background:rgba(255,255,255,.08);border-radius:50%;pointer-events:none;}
 </style>
-<script src="https://unpkg.com/qrcodejs@1.0.0/qrcode.min.js"></script>
+
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.js"></script>
 </head>
 <body>
 <div id="stage">
@@ -861,29 +862,34 @@ function refreshQR() {
   document.getElementById('ws-badge').textContent = '#'+sessionId;
   drawQR(url);
 }
-let _qrInstance = null;
 function drawQR(url) {
   const el = document.getElementById('qr-canvas');
   if (!el) return;
   el.innerHTML = '';
-  // Wait for QRCode lib to be ready
-  if (typeof QRCode === 'undefined') {
-    setTimeout(() => drawQR(url), 300);
-    return;
-  }
+  // Use QRCode API from qrcode.js (loaded below)
+  if (typeof qrcode === 'undefined') { setTimeout(() => drawQR(url), 300); return; }
   try {
-    _qrInstance = new QRCode(el, {
-      text: url,
-      width: 150,
-      height: 150,
-      colorDark: '#1a1917',
-      colorLight: '#f8f6f1',
-      correctLevel: QRCode.CorrectLevel.M
-    });
+    const qr = qrcode(0, 'M');
+    qr.addData(url);
+    qr.make();
+    const size = 160;
+    const count = qr.getModuleCount();
+    const cellSize = Math.floor(size / count);
+    const actualSize = cellSize * count;
+    let svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + actualSize + '" height="' + actualSize + '" viewBox="0 0 ' + actualSize + ' ' + actualSize + '">';
+    svg += '<rect width="100%" height="100%" fill="#f8f6f1"/>';
+    for (let r = 0; r < count; r++) {
+      for (let c = 0; c < count; c++) {
+        if (qr.isDark(r, c)) {
+          svg += '<rect x="' + (c * cellSize) + '" y="' + (r * cellSize) + '" width="' + cellSize + '" height="' + cellSize + '" fill="#1a1917"/>';
+        }
+      }
+    }
+    svg += '</svg>';
+    el.innerHTML = svg;
   } catch(e) {
-    // Fallback: show URL as text if QR fails
-    console.warn('QRCode error:', e);
-    el.innerHTML = '<div style="font-size:9px;color:#1a1917;padding:10px;word-break:break-all;width:150px;">' + url + '</div>';
+    console.warn('QR error:', e);
+    el.innerHTML = '<div style="font-size:9px;color:#1a1917;padding:8px;word-break:break-all;width:160px;line-height:1.4;">' + url + '</div>';
   }
 }
 
