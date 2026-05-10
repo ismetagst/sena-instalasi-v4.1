@@ -210,7 +210,8 @@ const server = http.createServer(async (req, res) => {
     db.events.unshift(evt); // newest first
     db.activeEventId = evt.id;
     saveDB(db);
-    return jsonRes(res, { ok:true, event:evt });
+    res.writeHead(302, { Location: '/dashboard' });
+    return res.end();
   }
 
   /* ── API: activate event ── */
@@ -220,7 +221,8 @@ const server = http.createServer(async (req, res) => {
     if (!db.events.find(e => e.id === body.id)) return jsonRes(res, { error:'not found' }, 404);
     db.activeEventId = body.id;
     saveDB(db);
-    return jsonRes(res, { ok:true });
+    res.writeHead(302, { Location: '/dashboard' });
+    return res.end();
   }
 
   /* ── API: delete event ── */
@@ -230,7 +232,8 @@ const server = http.createServer(async (req, res) => {
     db.events = db.events.filter(e => e.id !== body.id);
     if (db.activeEventId === body.id) db.activeEventId = db.events[0]?.id || null;
     saveDB(db);
-    return jsonRes(res, { ok:true });
+    res.writeHead(302, { Location: '/dashboard' });
+    return res.end();
   }
 
   /* ── API: delete 1 message ── */
@@ -241,19 +244,24 @@ const server = http.createServer(async (req, res) => {
     if (!evt) return jsonRes(res, { error:'event not found' }, 404);
     evt.messages = evt.messages.filter(m => m.id !== body.messageId);
     saveDB(db);
-    return jsonRes(res, { ok:true });
+    res.writeHead(302, { Location: '/dashboard' });
+    return res.end();
   }
 
   /* ── API: delete bulk messages ── */
   if (url === '/api/message/delete-bulk' && method === 'POST') {
     const body = await parseBody(req);
-    const ids  = body.ids || [];
-    const db   = loadDB();
-    const evt  = db.events.find(e => e.id === body.eventId);
+    // ids can be array (JSON) or comma-separated string (form POST)
+    let ids = body.ids || [];
+    if (typeof ids === 'string') ids = ids.split(',').map(s=>s.trim()).filter(Boolean);
+    const db  = loadDB();
+    const evt = db.events.find(e => e.id === body.eventId);
     if (!evt) return jsonRes(res, { error:'event not found' }, 404);
     evt.messages = evt.messages.filter(m => !ids.includes(m.id));
     saveDB(db);
-    return jsonRes(res, { ok:true });
+    // redirect back to dashboard after form POST
+    res.writeHead(302, { Location: '/dashboard' });
+    return res.end();
   }
 
   /* ── API: get full DB ── */
@@ -468,6 +476,7 @@ input[type=checkbox]{accent-color:rgba(74,222,128,.7);width:14px;height:14px;cur
 <script>
 const ACTIVE_EVENT_ID = ${JSON.stringify(activeId)};
 
+/* ── TOAST ── */
 function toast(msg, dur=2500) {
   const el = document.getElementById('toast');
   el.textContent = msg;
@@ -475,50 +484,45 @@ function toast(msg, dur=2500) {
   setTimeout(() => el.classList.remove('show'), dur);
 }
 
-async function post(url, data) {
-  const r = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data)
+/* ── POST via hidden form (works reliably on all hosts) ── */
+function formPost(action, fields, reload=true) {
+  const form = document.createElement('form');
+  form.method = 'POST';
+  form.action = action;
+  form.style.display = 'none';
+  Object.entries(fields).forEach(([k,v]) => {
+    const inp = document.createElement('input');
+    inp.type='hidden'; inp.name=k; inp.value=v;
+    form.appendChild(inp);
   });
-  return r.json();
+  document.body.appendChild(form);
+  form.submit();
 }
 
 /* ── CREATE EVENT ── */
-async function createEvent() {
+function createEvent() {
   const name = document.getElementById('evt-name').value.trim();
   const date = document.getElementById('evt-date').value;
   if (!name) { toast('isi nama acara dulu'); return; }
-  await post('/api/event/new', { name, date });
-  toast('event dibuat → ' + name);
-  setTimeout(() => location.reload(), 800);
+  formPost('/api/event/new', { name, date });
 }
 
 /* ── ACTIVATE EVENT ── */
-async function activateEvent(id, name) {
-  await post('/api/event/activate', { id });
-  toast('event aktif: ' + name);
-  setTimeout(() => location.reload(), 600);
+function activateEvent(id, name) {
+  formPost('/api/event/activate', { id });
 }
 
 /* ── DELETE EVENT ── */
-async function deleteEvent(e, id, name) {
+function deleteEvent(e, id, name) {
   e.stopPropagation();
   if (!confirm('Hapus event "' + name + '" beserta semua pesannya?')) return;
-  await post('/api/event/delete', { id });
-  toast('event dihapus');
-  setTimeout(() => location.reload(), 600);
+  formPost('/api/event/delete', { id });
 }
 
 /* ── DELETE 1 MESSAGE ── */
-async function deleteMsg(msgId, name) {
+function deleteMsg(msgId, name) {
   if (!confirm('Hapus pesan dari "' + name + '"?')) return;
-  const r = await post('/api/message/delete', { eventId: ACTIVE_EVENT_ID, messageId: msgId });
-  if (r.ok) {
-    document.getElementById('row-' + msgId)?.remove();
-    toast('pesan dihapus');
-    updateBulk();
-  }
+  formPost('/api/message/delete', { eventId: ACTIVE_EVENT_ID, messageId: msgId });
 }
 
 /* ── SELECT ALL ── */
@@ -533,36 +537,31 @@ function toggleAll(cb) {
 /* ── UPDATE BULK BAR ── */
 function updateBulk() {
   const checked = document.querySelectorAll('.msg-check:checked');
-  const bar = document.getElementById('bulk-bar');
   document.getElementById('bulk-count').textContent = checked.length + ' dipilih';
-  bar.classList.toggle('show', checked.length > 0);
+  document.getElementById('bulk-bar').classList.toggle('show', checked.length > 0);
   document.querySelectorAll('.msg-check').forEach(c => {
     c.closest('tr').classList.toggle('selected', c.checked);
   });
 }
 
 /* ── DELETE BULK ── */
-async function deleteBulk() {
+function deleteBulk() {
   const ids = [...document.querySelectorAll('.msg-check:checked')].map(c => c.value);
-  if (ids.length === 0) return;
+  if (!ids.length) return;
   if (!confirm('Hapus ' + ids.length + ' pesan yang dipilih?')) return;
-  const r = await post('/api/message/delete-bulk', { eventId: ACTIVE_EVENT_ID, ids });
-  if (r.ok) {
-    ids.forEach(id => document.getElementById('row-' + id)?.remove());
-    toast(ids.length + ' pesan dihapus');
-    clearSelection();
-  }
+  formPost('/api/message/delete-bulk', { eventId: ACTIVE_EVENT_ID, ids: ids.join(',') });
 }
 
 /* ── CLEAR SELECTION ── */
 function clearSelection() {
-  document.querySelectorAll('.msg-check').forEach(c => { c.checked=false; c.closest('tr').classList.remove('selected'); });
+  document.querySelectorAll('.msg-check').forEach(c => {
+    c.checked=false; c.closest('tr').classList.remove('selected');
+  });
   const ca = document.getElementById('check-all');
-  if (ca) ca.checked = false;
+  if (ca) ca.checked=false;
   updateBulk();
 }
 
-/* Set today's date as default in date input */
 const today = new Date().toISOString().split('T')[0];
 const dateInput = document.getElementById('evt-date');
 if (dateInput) dateInput.value = today;
