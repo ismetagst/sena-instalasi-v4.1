@@ -137,7 +137,7 @@ html,body{width:100%;height:100%;background:#080808;overflow:hidden;font-family:
 #qr-overlay{display:none;position:fixed;inset:0;background:rgba(8,8,8,.92);flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:80;}
 #qr-overlay.show{display:flex;}
 .qr-hint{font-size:10px;letter-spacing:.2em;color:rgba(255,255,255,.25);text-transform:uppercase;}
-#qr-frame{background:#f8f6f1;padding:14px;display:inline-flex;}
+#qr-frame{background:#f8f6f1;padding:14px;display:inline-flex;align-items:center;justify-content:center;} #qr-canvas img{display:block!important;}
 #qr-canvas{width:120px;height:120px;}
 #qr-url{font-size:9px;color:rgba(255,255,255,.15);letter-spacing:.1em;margin-top:4px;}
 #qr-sid{font-size:9px;color:rgba(255,255,255,.1);letter-spacing:.08em;}
@@ -156,6 +156,7 @@ html,body{width:100%;height:100%;background:#080808;overflow:hidden;font-family:
 .dbtn.on{background:rgba(255,255,255,.88);color:#0a0a0a;}
 .pt{position:absolute;width:1px;height:1px;background:rgba(255,255,255,.08);border-radius:50%;pointer-events:none;}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body>
 <div id="stage">
@@ -247,7 +248,7 @@ html,body{width:100%;height:100%;background:#080808;overflow:hidden;font-family:
 
   <div id="qr-overlay">
     <div class="qr-hint">scan untuk menulis</div>
-    <div id="qr-frame"><canvas id="qr-canvas" width="120" height="120"></canvas></div>
+    <div id="qr-frame"><div id="qr-canvas"></div></div>
     <div id="qr-url"></div><div id="qr-sid"></div>
     <div class="qr-hint" style="font-size:9px;margin-top:4px;opacity:.5">✌ peace lagi untuk tutup qr</div>
   </div>
@@ -860,22 +861,23 @@ function refreshQR() {
   document.getElementById('ws-badge').textContent = '#'+sessionId;
   drawQR(url);
 }
+let _qrInstance = null;
 function drawQR(url) {
-  const c=document.getElementById('qr-canvas'), ctx=c.getContext('2d');
-  const sz=120,cells=25,cell=sz/cells;
-  ctx.fillStyle='#f8f6f1'; ctx.fillRect(0,0,sz,sz); ctx.fillStyle='#1a1917';
-  const h=[...url].reduce((a,ch)=>(a*31+ch.charCodeAt(0))|0,0);
-  for(let r=0;r<cells;r++) for(let c2=0;c2<cells;c2++){
-    let v=0;
-    if(r<7&&c2<7) v=fc(r,c2);
-    else if(r<7&&c2>=cells-7) v=fc(r,c2-(cells-7));
-    else if(r>=cells-7&&c2<7) v=fc(r-(cells-7),c2);
-    else if(r===6||c2===6) v=(r+c2)%2===0?1:0;
-    else v=((h^(r*c2*7+c2*13+r*17))>>((r+c2)%8))&1;
-    if(v) ctx.fillRect(Math.round(c2*cell),Math.round(r*cell),Math.ceil(cell),Math.ceil(cell));
+  const el = document.getElementById('qr-canvas');
+  el.innerHTML = ''; // clear previous
+  try {
+    _qrInstance = new QRCode(el, {
+      text: url,
+      width: 120,
+      height: 120,
+      colorDark: '#1a1917',
+      colorLight: '#f8f6f1',
+      correctLevel: QRCode.CorrectLevel.M
+    });
+  } catch(e) {
+    console.warn('QRCode error:', e);
   }
 }
-function fc(r,c){return(r===0||r===6||c===0||c===6)?1:(r>=2&&r<=4&&c>=2&&c<=4)?1:0;}
 
 /* ═══════════════════════════════════
    RECEIVE TEXT
