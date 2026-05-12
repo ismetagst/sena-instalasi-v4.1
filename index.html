@@ -121,7 +121,7 @@ html,body{width:100%;height:100%;background:#080808;overflow:hidden;font-family:
 .page-dust{position:fixed;pointer-events:none;border-radius:50%;z-index:45;}
 
 /* ── THANK YOU overlay ── */
-#thankyou-overlay{display:none;position:fixed;inset:0;background:rgba(8,8,8,0);flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:85;transition:background .7s ease;}
+#thankyou-overlay{display:none;position:fixed;inset:0;background:rgba(8,8,8,0);flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:85;transition:background .7s ease;} #thankyou-overlay.show{background:rgba(8,8,8,.88);}
 #thankyou-overlay.show{display:flex;background:rgba(8,8,8,.88);}
 .ty-mark{font-size:16px;opacity:.35;}
 .ty-title{font-family:Georgia,serif;font-size:14px;color:rgba(255,255,255,.4);letter-spacing:.18em;text-transform:uppercase;}
@@ -478,6 +478,7 @@ window.addEventListener('resize', resizeCanvas);
 
   proxFill.style.height = (Math.min(1, prox) * 100).toFixed(1) + '%';
   drawOverlay();
+  drawDetectionZone();
   requestAnimationFrame(loop);
 })();
 
@@ -577,12 +578,28 @@ function drawOverlay() {
   }
 }
 
+function drawDetectionZone() {
+  // Just a subtle text note — no visual box
+  if (!camMode) return;
+  const W = gCanvas.width, H = gCanvas.height;
+  gCtx.save();
+  gCtx.fillStyle = 'rgba(255,255,255,0.08)';
+  gCtx.font = '10px Georgia';
+  gCtx.fillText('gunakan tangan kanan', 14, H - 16);
+  gCtx.restore();
+}
+
 /* ═══════════════════════════════════
    FACE MESH → PROXIMITY + PARALLAX
 ═══════════════════════════════════ */
 function onFace(res) {
+  // Once book is open (phase >= locked), face detection only drives parallax
+  // Proximity is LOCKED — book stays visible regardless of face
+  const phaseLocked = (phase === 'locked' || phase === 'open' || phase === 'waiting_close');
+
   if (!res.multiFaceLandmarks?.length) {
-    targetProx = Math.max(0, targetProx - 0.01);
+    // Only fade book if still in idle phase
+    if (!phaseLocked) targetProx = Math.max(0, targetProx - 0.01);
     gdFace.classList.remove('on'); return;
   }
   gdFace.classList.add('on');
@@ -590,33 +607,42 @@ function onFace(res) {
   const lc = lm[234], rc = lm[454];
   if (!lc||!rc) return;
   const fw = Math.abs(rc.x - lc.x);
-  targetProx = Math.max(0, Math.min(1, (fw - 0.07) / (0.40 - 0.07)));
+
+  if (!phaseLocked) {
+    // Normal proximity drive — only in idle
+    targetProx = Math.max(0, Math.min(1, (fw - 0.07) / (0.40 - 0.07)));
+  } else {
+    // Book locked open — keep prox pinned at 1, just update parallax
+    targetProx = 1.0;
+  }
   const nose = lm[1];
-  if (nose) faceX = (0.5 - nose.x) * 2.4; // parallax: face left→book right
+  if (nose) faceX = (0.5 - nose.x) * 2.4;
 }
 
 /* ═══════════════════════════════════
    HAND CLASSIFY
 ═══════════════════════════════════ */
 function classifyHand(lm) {
-  const th=lm[4], it=lm[8], ip=lm[6];
+  const th=lm[4], it=lm[8], ip=lm[6], im=lm[5];
   const mt=lm[12], mp=lm[10];
   const rt=lm[16], rp=lm[14];
   const pt=lm[20], pp=lm[18];
 
-  const iExt = it.y < ip.y - 0.030;
-  const mExt = mt.y < mp.y - 0.026;
-  const rExt = rt.y < rp.y - 0.022;
-  const pExt = pt.y < pp.y - 0.018;
+  // Relaxed thresholds — more forgiving
+  const iExt = it.y < ip.y - 0.022;
+  const mExt = mt.y < mp.y - 0.018;
+  const rExt = rt.y < rp.y - 0.015;
+  const pExt = pt.y < pp.y - 0.012;
 
   const pinchD = Math.hypot(th.x-it.x, th.y-it.y);
-  const isPinch = pinchD < 0.065;
+  const isPinch = pinchD < 0.08;
+  const isFist  = !iExt && !mExt && !rExt && !pExt && !isPinch && it.y > im.y + 0.01;
 
-  if (isPinch)                    return 'pinch';
-  if (iExt && mExt && rExt && pExt) return 'open5';
-  if (iExt && mExt && !rExt && !pExt && !isPinch) return 'peace'; // ✌
-  if (iExt && !mExt && !rExt && !pExt && !isPinch) return 'pointing'; // ☝
-  if (!iExt && !mExt && !rExt && !pExt && !isPinch) return 'fist'; // ✊
+  if (isPinch)                             return 'pinch';
+  if (iExt && mExt && rExt && pExt)       return 'open5';
+  if (iExt && mExt && !rExt && !pExt && !isPinch) return 'peace';
+  if (iExt && !mExt && !rExt && !pExt && !isPinch) return 'pointing';
+  if (isFist)                              return 'fist';
   return 'none';
 }
 
@@ -629,11 +655,20 @@ function onHands(res) {
     gesture = 'none';
     [gdLock,gdOpen5,gdPeace,gdFist].forEach(d=>d.classList.remove('on'));
     cancelHold();
-    // if QR visible & peace gone, leave it open — user must peace again to close
     return;
   }
 
-  const lm = lastHandLM = res.multiHandLandmarks[0];
+  const lm = res.multiHandLandmarks[0];
+
+  // RIGHT HAND ONLY: in mirrored webcam, right hand appears on LEFT side of frame (x < 0.55)
+  // Left hand (x > 0.55) is ignored to prevent accidental triggers
+  const wristX = lm[0].x;
+  if (wristX > 0.60) {
+    // Left hand detected — ignore completely, don't clear gesture state
+    return;
+  }
+
+  lastHandLM = lm;
   gesture = classifyHand(lm);
 
   gdLock.classList.toggle('on',  gesture==='pointing');
@@ -641,40 +676,35 @@ function onHands(res) {
   gdPeace.classList.toggle('on', gesture==='peace');
   gdFist.classList.toggle('on',  gesture==='fist');
 
-  /* ── PHASE: idle ──
-     ☝ Tahan 3s → lock */
+  /* ── PHOTO SAFE: block all gesture processing ── */
+  if (phase === 'photo_safe') return;
+
+  /* ── PHASE: idle → ☝ 3s → lock ── */
   if (phase === 'idle') {
-    if (gesture === 'pointing' && prox > 0.45) {
+    if (gesture === 'pointing' && prox > 0.40) {
       if (!holdActive) startHold('lock');
     } else {
       cancelHold();
     }
   }
 
-  /* ── PHASE: locked ──
-     ✋ 5 jari → buka buku */
+  /* ── PHASE: locked → ✋ buka buku ── */
   if (phase === 'locked') {
     if (gesture === 'open5') triggerOpen();
     if (gesture !== 'pointing') cancelHold();
   }
 
-  /* ── PHASE: open ──
-     ✌ peace → toggle QR
-     ✋ open5 → close QR (if open)
-     ☝ tahan 3s (hanya jika hasWritten) → close ritual */
+  /* ── PHASE: open ── */
   if (phase === 'open') {
-    // Peace ✌ → start QR countdown (open or close)
     if (gesture === 'peace') {
       if (qrPhase === 'idle') startQRHold('opening');
       else if (qrPhase === 'open') startQRHold('closing');
-      // if already counting, keep going
     } else {
-      // Not peace anymore — cancel any in-progress countdown
       if (qrPhase === 'opening' || qrPhase === 'closing') cancelQRHold();
     }
-    // open5 while QR showing → cancel close countdown, stay open
-    if (gesture === 'open5' && qrPhase === 'open') cancelQRHold();
-    // Close ritual: only if text received
+    if (gesture === 'open5' && qrPhase === 'open') {
+      cancelQRHold(); hideQR(); qrPhase = 'idle';
+    }
     if (gesture === 'pointing' && hasWritten) {
       if (!holdActive) startHold('close');
     } else if (gesture !== 'pointing') {
@@ -682,16 +712,11 @@ function onHands(res) {
     }
   }
 
-  /* ── PHASE: waiting_close ──
-     ✊ kepalan → tutup buku */
+  /* ── PHASE: waiting_close → ✊ tutup buku ── */
   if (phase === 'waiting_close') {
     if (gesture === 'fist' && fistCooldown === 0) {
       fistCooldown = 40;
       triggerClose();
-    }
-    // Cancel if pointing again
-    if (gesture !== 'fist' && gesture !== 'none') {
-      // stay in waiting_close, just wait for fist
     }
   }
 }
@@ -897,28 +922,50 @@ function drawQR(url) {
    RECEIVE TEXT
 ═══════════════════════════════════ */
 function receiveText(title, body) {
-  document.getElementById('pg-title').textContent=title; document.getElementById('pg-title').style.display='block';
-  document.getElementById('pg-body').textContent=body;   document.getElementById('pg-body').style.display='block';
-  document.getElementById('pg-lines').style.display='none';
+  // ── Works from ANY phase — even if QR is open or hands are busy ──
+
+  // 1. Force book open and lock it
+  isOpen = true;
+  targetProx = 1.0;
+  phase = 'photo_safe'; // special phase: nothing can disturb this
   hasWritten = true;
+
+  // 2. Cancel any in-progress hold/countdown
+  cancelHold();
+  cancelQRHold();
+
+  // 3. Close QR overlay
   hideQR();
+  qrPhase = 'idle';
 
-  // Save to dashboard DB via server
-  if (ws?.readyState===1) {
-    ws.send(JSON.stringify({ type:'save', sid:sessionId, title, body, ts: Date.now() }));
+  // 4. Write text to book page
+  const pgTitle = document.getElementById('pg-title');
+  const pgBody  = document.getElementById('pg-body');
+  const pgLines = document.getElementById('pg-lines');
+  if (pgTitle) { pgTitle.textContent = title; pgTitle.style.display = 'block'; }
+  if (pgBody)  { pgBody.textContent  = body;  pgBody.style.display  = 'block'; }
+  if (pgLines)  pgLines.style.display = 'none';
+
+  // 5. Show thank you overlay
+  const tyName = document.getElementById('ty-name');
+  const tyBody = document.getElementById('ty-body');
+  const ty     = document.getElementById('thankyou-overlay');
+  if (tyName) tyName.textContent = title;
+  if (tyBody) tyBody.textContent = body;
+  if (ty) {
+    ty.style.display = 'flex';
+    requestAnimationFrame(() => requestAnimationFrame(() => ty.classList.add('show')));
+    setTimeout(() => {
+      ty.classList.remove('show');
+      setTimeout(() => { ty.style.display = 'none'; }, 700);
+      // Enter photo safe mode hints
+      hint('— ambil foto sesukamu — ☝ tahan 3 detik untuk menutup —');
+      setSlabel('— tulisan ada di halaman —', true);
+      if (closeRitual) closeRitual.classList.add('show');
+      // Transition from photo_safe → open (allow close ritual)
+      phase = 'open';
+    }, 4000);
   }
-
-  // Thank you overlay
-  document.getElementById('ty-name').textContent = title;
-  document.getElementById('ty-body').textContent = body;
-  const ty = document.getElementById('thankyou-overlay');
-  ty.classList.add('show');
-  setTimeout(() => {
-    ty.classList.remove('show');
-    hint('— ☝ tahan 3 detik untuk ritual menutup —');
-    setSlabel('— tulisan ada di halaman —', true);
-    closeRitual.classList.add('show');
-  }, 4000);
 }
 
 /* ═══════════════════════════════════
@@ -932,7 +979,7 @@ function fullReset() {
   gesture='none'; peaceCooldown=0; fistCooldown=0;
   qrPhase='idle'; if(qrHoldInterval){clearInterval(qrHoldInterval);qrHoldInterval=null;} peaceBlinkT=0;
   qrVisible=false; lastHandLM=null;
-  phase='idle'; hasWritten=false; closeGate=false;
+  phase='idle'; hasWritten=false; closeGate=false; qrPhase='idle';
   holdActive=false; holdMode='lock';
   clearInterval(holdInterval);
   cdWrap.classList.remove('show');
