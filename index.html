@@ -21,7 +21,20 @@
 *{margin:0;padding:0;box-sizing:border-box;}
 html,body{width:100%;height:100%;background:#080808;overflow:hidden;font-family:Georgia,serif;}
 #stage{width:100vw;height:100vh;position:relative;overflow:hidden;}
-#cam-vid{position:fixed;top:-9999px;left:-9999px;width:320px;height:240px;}
+#cam-vid{
+  position:fixed;
+  bottom:48px;left:14px;
+  width:110px;height:82px;
+  object-fit:cover;
+  transform:scaleX(-1);
+  opacity:0;
+  border-radius:4px;
+  transition:opacity 0.4s;
+  pointer-events:none;
+  z-index:55;
+  filter:brightness(0.7) contrast(1.1);
+}
+#cam-vid.visible{opacity:1;}
 #gesture-canvas{position:fixed;inset:0;width:100%;height:100%;pointer-events:none;z-index:50;}
 
 /* Status */
@@ -365,19 +378,43 @@ const gdFist  = document.getElementById('gd-fist');
 /* ═══════════════════════════════════
    WEBSOCKET
 ═══════════════════════════════════ */
+let wsPingInterval = null;
+
 function connectWS() {
   try {
+    if (ws) { try { ws.close(); } catch(_){} }
     ws = new WebSocket(`${WS_URL}?role=desktop&sid=${sessionId}`);
+
     ws.onopen = () => {
       document.getElementById('ws-badge').textContent = '#' + sessionId;
       refreshQR();
+      // Keepalive ping every 25s — prevents Railway idle timeout
+      clearInterval(wsPingInterval);
+      wsPingInterval = setInterval(() => {
+        if (ws && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: 'ping', sid: sessionId }));
+        }
+      }, 25000);
     };
+
     ws.onmessage = e => {
-      const msg = JSON.parse(e.data);
-      if (msg.type === 'guest_joined') hint('— tamu terhubung —');
+      let msg;
+      try { msg = JSON.parse(e.data); } catch { return; }
+      if (msg.type === 'guest_joined') hint('— tamu terhubung, menunggu tulisan —');
       if (msg.type === 'write')        receiveText(msg.title, msg.body);
+      // pong: server still alive, do nothing
     };
-    ws.onclose = () => setTimeout(connectWS, 2500);
+
+    ws.onclose = () => {
+      clearInterval(wsPingInterval);
+      // Reconnect — use same sessionId so guest can still deliver
+      setTimeout(connectWS, 2000);
+    };
+
+    ws.onerror = () => {
+      clearInterval(wsPingInterval);
+    };
+
   } catch(_) {}
 }
 
@@ -579,14 +616,7 @@ function drawOverlay() {
 }
 
 function drawDetectionZone() {
-  // Just a subtle text note — no visual box
-  if (!camMode) return;
-  const W = gCanvas.width, H = gCanvas.height;
-  gCtx.save();
-  gCtx.fillStyle = 'rgba(255,255,255,0.08)';
-  gCtx.font = '10px Georgia';
-  gCtx.fillText('gunakan tangan kanan', 14, H - 16);
-  gCtx.restore();
+  // Removed — no visual indicator needed
 }
 
 /* ═══════════════════════════════════
@@ -1032,6 +1062,7 @@ async function startCam() {
     camMode = true;
     document.getElementById('btn-cam').textContent = 'stop webcam';
     document.getElementById('btn-cam').classList.add('on');
+    document.getElementById('cam-vid').classList.add('visible');
     hint('— mendekati kamera —');
   } catch(e) {
     hint('— gagal: ' + e.message + ' —'); console.error(e);
@@ -1046,6 +1077,7 @@ function stopCam() {
   [gdFace,gdLock,gdOpen5,gdPeace,gdFist].forEach(d=>d.classList.remove('on'));
   document.getElementById('btn-cam').textContent='aktifkan webcam';
   document.getElementById('btn-cam').classList.remove('on');
+  document.getElementById('cam-vid').classList.remove('visible');
   hint('— aktifkan webcam untuk mulai —');
 }
 
