@@ -44,6 +44,43 @@ h1{font-family:Georgia,serif;font-size:26px;font-weight:400;line-height:1.45;col
 .ldot{width:5px;height:5px;border-radius:50%;background:#ccc;animation:pu 1.5s ease-in-out infinite;}
 @keyframes pu{0%,100%{opacity:.2;}50%{opacity:1;}}
 
+.btn-share{
+  margin-top:24px;
+  background:none;border:.5px solid rgba(0,0,0,.15);
+  color:#888;font-family:Georgia,serif;
+  font-size:12px;letter-spacing:.1em;
+  padding:8px 22px;border-radius:20px;cursor:pointer;
+}
+.btn-share:hover{border-color:#111;color:#111;}
+
+/* SHARE PAGE */
+#pg-share{background:#f5f4f0;min-height:100vh;}
+.share-inner{padding:24px 20px 40px;display:flex;flex-direction:column;align-items:center;gap:16px;}
+.share-header{width:100%;}
+.card-wrap{
+  width:100%;max-width:280px;
+  border-radius:8px;overflow:hidden;
+  box-shadow:0 8px 32px rgba(0,0,0,.12);
+}
+#share-canvas{width:100%;height:auto;display:block;}
+.share-actions{display:flex;flex-direction:column;gap:10px;width:100%;max-width:280px;}
+.btn-dl{
+  width:100%;padding:14px;
+  background:#111;color:#fff;
+  border:none;border-radius:8px;
+  font-size:13px;letter-spacing:.08em;
+  cursor:pointer;font-family:Georgia,serif;
+}
+.btn-ig{
+  display:block;width:100%;padding:13px;
+  border:.5px solid rgba(0,0,0,.15);
+  color:#666;border-radius:8px;
+  font-size:12px;letter-spacing:.1em;
+  text-align:center;font-family:Georgia,serif;
+  text-decoration:none;
+}
+.share-note{font-size:11px;color:#bbb;letter-spacing:.08em;text-align:center;}
+
 /* OFFLINE */
 #offline{display:none;position:fixed;bottom:0;left:0;right:0;background:#1c1c1a;color:rgba(255,255,255,.4);font-size:11px;letter-spacing:.1em;text-align:center;padding:10px;font-family:Georgia,serif;z-index:100;}
 #offline.show{display:block;}
@@ -54,7 +91,7 @@ h1{font-family:Georgia,serif;font-size:26px;font-weight:400;line-height:1.45;col
 <div class="page active" id="pg-intro">
   <div>
     <div class="mark">(◕ᴗ◕✿)</div>
-    <h1>tulis apapun, dengan bijak.</h1>
+    <h1>tulis sesuatu yang tenang.</h1>
     <p class="sub">tulisanmu akan muncul di layar instalasi di depanmu.</p>
   </div>
   <div class="foot">
@@ -83,6 +120,24 @@ h1{font-family:Georgia,serif;font-size:26px;font-weight:400;line-height:1.45;col
   <div class="done-name" id="done-name"></div>
   <div class="done-body" id="done-body"></div>
   <div class="live"><div class="ldot"></div><span>tulisanmu ada di layar sekarang</span></div>
+  <button class="btn-share" id="btn-to-share">bagikan ↗</button>
+</div>
+
+<!-- SHARE PAGE 9:16 -->
+<div id="pg-share">
+  <div class="share-inner">
+    <div class="share-header">
+      <button class="back" id="btn-share-back">← kembali</button>
+    </div>
+    <div class="card-wrap">
+      <canvas id="share-canvas" width="540" height="960"></canvas>
+    </div>
+    <div class="share-actions">
+      <button class="btn-dl" id="btn-download">simpan gambar</button>
+      <a class="btn-ig" href="https://senaslowblog.org" target="_blank">senaslowblog.org ↗</a>
+    </div>
+    <div class="share-note">simpan lalu bagikan ke Instagram Story</div>
+  </div>
 </div>
 
 <div id="offline">tidak terhubung — pastikan server menyala</div>
@@ -130,16 +185,117 @@ function checkReady() { btnSend.disabled = !(inpName.value.trim() && inpBody.val
 inpName.addEventListener('input', checkReady);
 inpBody.addEventListener('input', () => { document.getElementById('cc').textContent=inpBody.value.length; checkReady(); });
 
+let savedName = '', savedBody = '';
+
 btnSend.addEventListener('click', () => {
-  const name = inpName.value.trim(), body = inpBody.value.trim();
-  if (!name || !body) return;
-  if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type:'write', sid, title:name, body }));
-  document.getElementById('done-name').textContent = name;
-  document.getElementById('done-body').textContent = body;
-  // Show done page
+  savedName = inpName.value.trim();
+  savedBody = inpBody.value.trim();
+  if (!savedName || !savedBody) return;
+  if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type:'write', sid, title:savedName, body:savedBody }));
+  document.getElementById('done-name').textContent = savedName;
+  document.getElementById('done-body').textContent = savedBody;
   document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
   document.getElementById('pg-done').classList.add('active');
   window.scrollTo(0,0);
+});
+
+// Share page
+document.getElementById('btn-to-share').addEventListener('click', () => {
+  document.querySelectorAll('.page, #pg-done, #pg-share').forEach(p=>p.classList.remove('active'));
+  document.getElementById('pg-share').classList.add('active');
+  window.scrollTo(0,0);
+  drawShareCard(savedName, savedBody);
+});
+document.getElementById('btn-share-back').addEventListener('click', () => {
+  document.querySelectorAll('.page, #pg-share').forEach(p=>p.classList.remove('active'));
+  document.getElementById('pg-done').classList.add('active');
+  window.scrollTo(0,0);
+});
+
+function drawShareCard(name, body) {
+  const canvas = document.getElementById('share-canvas');
+  const ctx    = canvas.getContext('2d');
+  const W = 540, H = 960;
+  ctx.clearRect(0, 0, W, H);
+
+  // Background — off-white, warm
+  ctx.fillStyle = '#f7f5f0';
+  ctx.fillRect(0, 0, W, H);
+
+  // Subtle top bar
+  ctx.fillStyle = '#1a1917';
+  ctx.fillRect(0, 0, W, 3);
+
+  // Logo / emoji mark
+  ctx.font = '38px serif';
+  ctx.fillStyle = 'rgba(0,0,0,0.18)';
+  ctx.textAlign = 'center';
+  ctx.fillText('(◕ᴗ◕✿)', W/2, 100);
+
+  // Thin divider
+  ctx.strokeStyle = 'rgba(0,0,0,0.08)';
+  ctx.lineWidth = 0.5;
+  ctx.beginPath(); ctx.moveTo(60, 130); ctx.lineTo(W-60, 130); ctx.stroke();
+
+  // Name
+  ctx.font = '500 48px Georgia, serif';
+  ctx.fillStyle = '#1a1917';
+  ctx.textAlign = 'center';
+  ctx.fillText(name || '', W/2, 220);
+
+  // Body text — wrapped
+  ctx.font = '32px Georgia, serif';
+  ctx.fillStyle = '#555';
+  ctx.textAlign = 'center';
+  wrapText(ctx, body || '', W/2, 310, W - 120, 52);
+
+  // Bottom section
+  ctx.strokeStyle = 'rgba(0,0,0,0.08)';
+  ctx.lineWidth = 0.5;
+  ctx.beginPath(); ctx.moveTo(60, H-160); ctx.lineTo(W-60, H-160); ctx.stroke();
+
+  // CTA
+  ctx.font = '26px Georgia, serif';
+  ctx.fillStyle = 'rgba(0,0,0,0.3)';
+  ctx.textAlign = 'center';
+  ctx.fillText('tulis sesuatu yang tenang.', W/2, H-110);
+
+  ctx.font = '22px Georgia, serif';
+  ctx.fillStyle = 'rgba(0,0,0,0.2)';
+  ctx.fillText('senaslowblog.org', W/2, H-72);
+
+  // Bottom bar
+  ctx.fillStyle = '#1a1917';
+  ctx.fillRect(0, H-3, W, 3);
+}
+
+function wrapText(ctx, text, x, y, maxW, lineH) {
+  const words = text.split(' ');
+  let line = '';
+  let cy = y;
+  const maxLines = 8;
+  let lineCount = 0;
+  for (let i = 0; i < words.length; i++) {
+    const test = line + words[i] + ' ';
+    if (ctx.measureText(test).width > maxW && line !== '') {
+      ctx.fillText(line.trim(), x, cy);
+      line = words[i] + ' ';
+      cy += lineH;
+      lineCount++;
+      if (lineCount >= maxLines) { ctx.fillText('...', x, cy); break; }
+    } else {
+      line = test;
+    }
+  }
+  if (lineCount < maxLines) ctx.fillText(line.trim(), x, cy);
+}
+
+document.getElementById('btn-download').addEventListener('click', () => {
+  const canvas = document.getElementById('share-canvas');
+  const a = document.createElement('a');
+  a.download = 'sena-' + (savedName || 'tulisan').replace(/\s+/g,'-').toLowerCase() + '.png';
+  a.href = canvas.toDataURL('image/png');
+  a.click();
 });
 </script>
 </body>
