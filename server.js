@@ -425,6 +425,12 @@ wss.on('connection', (ws, req) => {
     s.desktop=ws;
     console.log(`[+] desktop #${sid}`);
     ws.send(JSON.stringify({type:'connected',role:'desktop',sid}));
+    // Flush any buffered messages (sent while desktop was offline)
+    if (s.pending?.length) {
+      console.log(`[📨] flushing ${s.pending.length} buffered msgs to desktop #${sid}`);
+      s.pending.forEach(m => ws.send(JSON.stringify(m)));
+      s.pending = [];
+    }
   } else {
     s.guests.push(ws);
     console.log(`[+] guest   #${sid}`);
@@ -436,12 +442,26 @@ wss.on('connection', (ws, req) => {
     let msg; try{msg=JSON.parse(raw);}catch{return;}
     const S=wsSess[msg.sid||sid]; if(!S) return;
 
+    if (msg.type==='ping') {
+      // keepalive — send pong back
+      if (ws.readyState===1) ws.send(JSON.stringify({type:'pong'}));
+    }
+
     if (msg.type==='write') {
       console.log(`[✓] pesan #${sid}: "${msg.title}"`);
       addMessage(msg.title, msg.body, sid);
-      if (S.desktop?.readyState===1)
+
+      if (S.desktop?.readyState===1) {
+        // Desktop online — deliver immediately
         S.desktop.send(JSON.stringify({type:'write',title:msg.title,body:msg.body}));
+      } else {
+        // Desktop offline/reconnecting — buffer message, deliver on reconnect
+        if (!S.pending) S.pending = [];
+        S.pending.push({type:'write', title:msg.title, body:msg.body});
+        console.log(`[⏳] buffered for #${sid} (desktop offline)`);
+      }
     }
+
     if (msg.type==='reset') {
       S.guests.forEach(g=>{if(g.readyState===1)g.send(JSON.stringify({type:'reset'}));});
       delete wsSess[sid];
