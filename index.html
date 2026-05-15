@@ -346,8 +346,16 @@ const QR_HOLD_MS     = 3000;
 let peaceBlinkT      = 0;
 
 // Fist close gate — must hold ☝ first, then fist
-let closeGate = false; // true after close countdown completes
+let closeGate = false;
 let fistCooldown = 0;
+
+// ── Blackhole close animation state ──
+let blackholeActive = false;  // true when fist triggered close animation
+let blackholePhase  = 'idle'; // idle | suck | close | burst | done
+let blackholeProg   = 0;      // 0→1
+let blackholeX      = 0;      // fist wrist position on screen
+let blackholeY      = 0;
+let bhParticles     = [];     // active particle objects
 
 /* ═══════════════════════════════════
    ELEMENTS
@@ -516,6 +524,7 @@ window.addEventListener('resize', resizeCanvas);
   proxFill.style.height = (Math.min(1, prox) * 100).toFixed(1) + '%';
   drawOverlay();
   drawDetectionZone();
+  updateBlackhole();
   requestAnimationFrame(loop);
 })();
 
@@ -619,6 +628,137 @@ function drawDetectionZone() {
   // Removed — no visual indicator needed
 }
 
+/* ── BLACKHOLE ANIMATION ── */
+function updateBlackhole() {
+  if (!blackholeActive) return;
+  const W = gCanvas.width, H = gCanvas.height;
+  const bx = blackholeX, by = blackholeY;
+
+  if (blackholePhase === 'suck') {
+    blackholeProg = Math.min(1, blackholeProg + 0.008); // ~2s to suck
+
+    // Draw gravitational lensing rings around fist
+    const rings = 4;
+    for (let r = 0; r < rings; r++) {
+      const rProg = (blackholeProg + r * 0.1) % 1;
+      const rSize = 8 + rProg * 80 * (1 - blackholeProg * 0.6);
+      const rAlpha = (1 - rProg) * 0.35 * blackholeProg;
+      gCtx.save();
+      gCtx.strokeStyle = `rgba(255,255,255,${rAlpha.toFixed(3)})`;
+      gCtx.lineWidth = 0.8;
+      gCtx.beginPath();
+      gCtx.arc(bx, by, rSize, 0, Math.PI * 2);
+      gCtx.stroke();
+      gCtx.restore();
+    }
+
+    // Draw core black circle (grows with progress)
+    const coreSize = blackholeProg * 28;
+    gCtx.save();
+    const grad = gCtx.createRadialGradient(bx, by, 0, bx, by, coreSize * 1.8);
+    grad.addColorStop(0,   'rgba(0,0,0,0.95)');
+    grad.addColorStop(0.5, 'rgba(0,0,0,0.6)');
+    grad.addColorStop(1,   'rgba(0,0,0,0)');
+    gCtx.fillStyle = grad;
+    gCtx.beginPath();
+    gCtx.arc(bx, by, coreSize * 1.8, 0, Math.PI * 2);
+    gCtx.fill();
+    gCtx.restore();
+
+    // Move + draw particles sucking toward fist
+    bhParticles.forEach(p => {
+      p.t = Math.min(1, p.t + p.speed);
+      const eased = easeOut(p.t);
+      const cx = p.x + (bx - p.x) * eased;
+      const cy = p.y + (by - p.y) * eased;
+      // spiral offset
+      const spiral = Math.sin(p.t * Math.PI * 4 + p.spin * 20) * (1 - p.t) * 30;
+      const perpX  = -(by - p.y) / (Math.hypot(bx-p.x, by-p.y)||1) * spiral;
+      const perpY  =  (bx - p.x) / (Math.hypot(bx-p.x, by-p.y)||1) * spiral;
+      const alpha  = (1 - p.t * 0.9) * Math.min(1, blackholeProg * 4);
+      const size   = p.size * (1 - p.t * 0.7);
+      gCtx.save();
+      gCtx.fillStyle = p.col + alpha.toFixed(3) + ')';
+      gCtx.shadowColor = p.col + '0.6)';
+      gCtx.shadowBlur  = size * 2;
+      gCtx.beginPath();
+      gCtx.arc(cx + perpX, cy + perpY, Math.max(0.3, size), 0, Math.PI * 2);
+      gCtx.fill();
+      gCtx.restore();
+    });
+
+    // When all particles arrived → trigger book close
+    if (blackholeProg >= 1) {
+      blackholePhase = 'close';
+      blackholeProg  = 0;
+      // Now close the book
+      isOpen = false;
+    }
+  }
+
+  else if (blackholePhase === 'close') {
+    blackholeProg = Math.min(1, blackholeProg + 0.012);
+
+    // Core pulses while book closes
+    const pulse = 28 + Math.sin(blackholeProg * Math.PI * 6) * 8;
+    gCtx.save();
+    const grad2 = gCtx.createRadialGradient(bx, by, 0, bx, by, pulse * 2.5);
+    grad2.addColorStop(0,   `rgba(0,0,0,${0.95 * (1 - blackholeProg * 0.5)})`);
+    grad2.addColorStop(0.6, `rgba(0,0,0,${0.4  * (1 - blackholeProg)})`);
+    grad2.addColorStop(1,   'rgba(0,0,0,0)');
+    gCtx.fillStyle = grad2;
+    gCtx.beginPath();
+    gCtx.arc(bx, by, pulse * 2.5, 0, Math.PI * 2);
+    gCtx.fill();
+    gCtx.restore();
+
+    if (blackholeProg >= 1) {
+      blackholePhase = 'burst';
+      blackholeProg  = 0;
+      // Respawn particles outward (burst)
+      bhParticles = [];
+      for (let i = 0; i < 60; i++) {
+        const a = Math.random() * Math.PI * 2;
+        bhParticles.push({
+          x: bx, y: by,
+          vx: Math.cos(a) * (2 + Math.random() * 5),
+          vy: Math.sin(a) * (2 + Math.random() * 5),
+          size: 0.8 + Math.random() * 2.5,
+          t: 0,
+          col: Math.random() > 0.5 ? 'rgba(255,255,255,' : 'rgba(200,180,140,',
+        });
+      }
+    }
+  }
+
+  else if (blackholePhase === 'burst') {
+    blackholeProg = Math.min(1, blackholeProg + 0.025);
+    bhParticles.forEach(p => {
+      p.x += p.vx * (1 - blackholeProg * 0.7);
+      p.y += p.vy * (1 - blackholeProg * 0.7);
+      p.t  = blackholeProg;
+      const alpha = (1 - blackholeProg) * 0.8;
+      gCtx.save();
+      gCtx.fillStyle = p.col + alpha.toFixed(3) + ')';
+      gCtx.beginPath();
+      gCtx.arc(p.x, p.y, p.size * (1 - blackholeProg * 0.5), 0, Math.PI * 2);
+      gCtx.fill();
+      gCtx.restore();
+    });
+    if (blackholeProg >= 1) {
+      blackholePhase = 'done';
+      bhParticles    = [];
+    }
+  }
+
+  else if (blackholePhase === 'done') {
+    blackholeActive = false;
+    blackholePhase  = 'idle';
+    // Full reset
+    setTimeout(() => fullReset(), 100);
+  }
+}
+
 /* ═══════════════════════════════════
    FACE MESH → PROXIMITY + PARALLAX
 ═══════════════════════════════════ */
@@ -706,8 +846,9 @@ function onHands(res) {
   gdPeace.classList.toggle('on', gesture==='peace');
   gdFist.classList.toggle('on',  gesture==='fist');
 
-  /* ── PHOTO SAFE: block all gesture processing ── */
+  /* ── PHOTO SAFE or BLACKHOLE: block all gesture processing ── */
   if (phase === 'photo_safe') return;
+  if (blackholeActive) return;
 
   /* ── PHASE: idle → ☝ 3s → lock ── */
   if (phase === 'idle') {
@@ -822,16 +963,43 @@ function triggerOpen() {
 }
 
 function triggerClose() {
-  const ov = document.getElementById('fade-overlay');
-  ov.style.display = 'block';
-  ov.style.background = 'rgba(8,8,8,0)';
-  ov.style.transition = 'background .9s ease';
-  requestAnimationFrame(() => ov.style.background = 'rgba(8,8,8,.96)');
-  setTimeout(() => {
-    fullReset();
-    ov.style.background = 'rgba(8,8,8,0)';
-    setTimeout(() => ov.style.display='none', 800);
-  }, 1000);
+  // Don't do immediate fade — start blackhole animation instead
+  // Get fist position from last hand landmark (wrist, mirrored)
+  if (lastHandLM) {
+    const lm = lastHandLM;
+    blackholeX = (1 - lm[0].x) * innerWidth;
+    blackholeY = lm[0].y * innerHeight;
+  } else {
+    blackholeX = innerWidth  * 0.55;
+    blackholeY = innerHeight * 0.65;
+  }
+  startBlackholeAnimation();
+}
+
+function startBlackholeAnimation() {
+  blackholeActive = true;
+  blackholePhase  = 'suck';
+  blackholeProg   = 0;
+  bhParticles     = [];
+
+  // Spawn particles from random positions across screen
+  const count = 120;
+  for (let i = 0; i < count; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const dist  = 200 + Math.random() * Math.max(innerWidth, innerHeight) * 0.6;
+    bhParticles.push({
+      x:    innerWidth  * 0.5 + Math.cos(angle) * dist * (0.5 + Math.random()),
+      y:    innerHeight * 0.5 + Math.sin(angle) * dist * (0.3 + Math.random()),
+      size: 1 + Math.random() * 3.5,
+      speed:0.018 + Math.random() * 0.022,
+      t:    Math.random(),          // stagger delay 0–1
+      col:  Math.random() > 0.6     // mix white and warm particles
+            ? `rgba(255,255,255,`
+            : `rgba(${180+Math.floor(Math.random()*40)},${140+Math.floor(Math.random()*30)},${80+Math.floor(Math.random()*30)},`,
+      angle: angle,
+      spin:  (Math.random() - 0.5) * 0.04,
+    });
+  }
 }
 
 /* Page dust particles on book open */
@@ -1010,6 +1178,7 @@ function fullReset() {
   qrPhase='idle'; if(qrHoldInterval){clearInterval(qrHoldInterval);qrHoldInterval=null;} peaceBlinkT=0;
   qrVisible=false; lastHandLM=null;
   phase='idle'; hasWritten=false; closeGate=false; qrPhase='idle';
+  blackholeActive=false; blackholePhase='idle'; blackholeProg=0; bhParticles=[];
   holdActive=false; holdMode='lock';
   clearInterval(holdInterval);
   cdWrap.classList.remove('show');
