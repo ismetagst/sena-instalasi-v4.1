@@ -628,134 +628,275 @@ function drawDetectionZone() {
   // Removed — no visual indicator needed
 }
 
-/* ── BLACKHOLE ANIMATION ── */
+/* ── BLACKHOLE ANIMATION ── high-perf version ──
+   Uses offscreen canvas + Float32Array for 80k particles
+   Phases: suck (spiral inward) → close (book shuts) → burst → done
+───────────────────────────────────────────────────── */
+
+// Offscreen canvas for particle compositing
+let bhOffscreen   = null;
+let bhOffCtx      = null;
+const BH_COUNT    = 80000; // 80k particles
+// Typed arrays — much faster than object arrays
+let bhX, bhY, bhVX, bhVY, bhAge, bhLife, bhR, bhG, bhB, bhSize;
+let bhInitialized = false;
+
+function bhInit() {
+  if (bhInitialized) return;
+  bhX    = new Float32Array(BH_COUNT);
+  bhY    = new Float32Array(BH_COUNT);
+  bhVX   = new Float32Array(BH_COUNT);
+  bhVY   = new Float32Array(BH_COUNT);
+  bhAge  = new Float32Array(BH_COUNT);
+  bhLife = new Float32Array(BH_COUNT);
+  bhR    = new Uint8Array(BH_COUNT);
+  bhG    = new Uint8Array(BH_COUNT);
+  bhB    = new Uint8Array(BH_COUNT);
+  bhSize = new Float32Array(BH_COUNT);
+  bhInitialized = true;
+}
+
+function bhSpawnSuck(bx, by) {
+  bhInit();
+  const W = gCanvas.width, H = gCanvas.height;
+  const cx = W / 2, cy = H / 2;
+  for (let i = 0; i < BH_COUNT; i++) {
+    // Distribute from edges and full screen
+    const ring = Math.random();
+    let x, y;
+    if (ring < 0.3) {
+      // From edges
+      const side = Math.floor(Math.random() * 4);
+      if (side === 0) { x = Math.random()*W; y = -5; }
+      else if (side === 1) { x = W+5; y = Math.random()*H; }
+      else if (side === 2) { x = Math.random()*W; y = H+5; }
+      else { x = -5; y = Math.random()*H; }
+    } else {
+      // Scattered across full screen
+      x = (Math.random() - 0.5) * W * 2.2 + cx;
+      y = (Math.random() - 0.5) * H * 2.2 + cy;
+    }
+    bhX[i] = x;
+    bhY[i] = y;
+
+    // Velocity: tangential (spiral) + slight inward
+    const dx = bx - x, dy = by - y;
+    const dist = Math.sqrt(dx*dx + dy*dy) || 1;
+    const nx = dx/dist, ny = dy/dist;
+    // perpendicular (for spiral)
+    const tx = -ny, ty = nx;
+    const spinDir = Math.random() > 0.5 ? 1 : -1;
+    const speed = 0.3 + Math.random() * 1.2;
+    bhVX[i] = tx * speed * spinDir * 0.6;
+    bhVY[i] = ty * speed * spinDir * 0.6;
+    bhAge[i]  = Math.random(); // stagger start 0-1
+    bhLife[i] = 0.6 + Math.random() * 0.4;
+    bhSize[i] = 0.4 + Math.random() * 1.4;
+
+    // Colors: white + warm gold mix
+    if (Math.random() > 0.4) {
+      const v = 180 + Math.floor(Math.random()*75);
+      bhR[i] = v; bhG[i] = v; bhB[i] = v;
+    } else {
+      bhR[i] = 220 + Math.floor(Math.random()*35);
+      bhG[i] = 160 + Math.floor(Math.random()*50);
+      bhB[i] = 60  + Math.floor(Math.random()*60);
+    }
+  }
+}
+
+function bhSpawnBurst(bx, by) {
+  bhInit();
+  const count = BH_COUNT / 4; // burst = 20k
+  for (let i = 0; i < BH_COUNT; i++) {
+    if (i < count) {
+      const a = Math.random() * Math.PI * 2;
+      const s = 1.5 + Math.random() * 6;
+      bhX[i]  = bx; bhY[i] = by;
+      bhVX[i] = Math.cos(a) * s;
+      bhVY[i] = Math.sin(a) * s;
+      bhAge[i]  = 0;
+      bhLife[i] = 0.5 + Math.random() * 0.5;
+      bhSize[i] = 0.5 + Math.random() * 2;
+      const v = 150 + Math.floor(Math.random()*105);
+      bhR[i]=v; bhG[i]=v; bhB[i]=v;
+    } else {
+      // park unused
+      bhX[i]=-9999; bhY[i]=-9999; bhLife[i]=0;
+    }
+  }
+}
+
 function updateBlackhole() {
   if (!blackholeActive) return;
-  const W = gCanvas.width, H = gCanvas.height;
   const bx = blackholeX, by = blackholeY;
+  const W  = gCanvas.width,  H = gCanvas.height;
 
+  // Create/resize offscreen canvas
+  if (!bhOffscreen || bhOffscreen.width !== W || bhOffscreen.height !== H) {
+    bhOffscreen = new OffscreenCanvas(W, H);
+    bhOffCtx    = bhOffscreen.getContext('2d');
+  }
+  bhOffCtx.clearRect(0, 0, W, H);
+
+  /* ─── PHASE: suck ─── */
   if (blackholePhase === 'suck') {
-    blackholeProg = Math.min(1, blackholeProg + 0.008); // ~2s to suck
+    blackholeProg = Math.min(1, blackholeProg + 0.004); // ~4s
 
-    // Draw gravitational lensing rings around fist
-    const rings = 4;
-    for (let r = 0; r < rings; r++) {
-      const rProg = (blackholeProg + r * 0.1) % 1;
-      const rSize = 8 + rProg * 80 * (1 - blackholeProg * 0.6);
-      const rAlpha = (1 - rProg) * 0.35 * blackholeProg;
-      gCtx.save();
-      gCtx.strokeStyle = `rgba(255,255,255,${rAlpha.toFixed(3)})`;
-      gCtx.lineWidth = 0.8;
-      gCtx.beginPath();
-      gCtx.arc(bx, by, rSize, 0, Math.PI * 2);
-      gCtx.stroke();
-      gCtx.restore();
+    // Gravity strength grows with progress
+    const G = 0.04 + blackholeProg * 0.18;
+    let allIn = true;
+
+    // ImageData for fast pixel writing
+    const imgData = bhOffCtx.createImageData(W, H);
+    const px = imgData.data;
+
+    for (let i = 0; i < BH_COUNT; i++) {
+      // stagger: particle activates when prog > bhAge
+      if (blackholeProg < bhAge[i] * 0.7) continue;
+
+      const dx = bx - bhX[i];
+      const dy = by - bhY[i];
+      const dist2 = dx*dx + dy*dy;
+      const dist  = Math.sqrt(dist2) || 1;
+
+      if (dist < 6) {
+        // absorbed
+        bhX[i] = -9999; bhY[i] = -9999;
+        continue;
+      }
+      allIn = false;
+
+      // Gravity pull
+      const f = G / (dist * 0.04 + 1);
+      bhVX[i] += dx/dist * f;
+      bhVY[i] += dy/dist * f;
+
+      // Tangential (orbital) speed maintenance
+      const tx = -dy/dist, ty = dx/dist;
+      const tanSpeed = Math.sqrt(bhVX[i]*bhVX[i]+bhVY[i]*bhVY[i]) * 0.012;
+      bhVX[i] += tx * tanSpeed;
+      bhVY[i] += ty * tanSpeed;
+
+      // Speed cap
+      const speed = Math.sqrt(bhVX[i]*bhVX[i]+bhVY[i]*bhVY[i]);
+      if (speed > 14) { bhVX[i] *= 14/speed; bhVY[i] *= 14/speed; }
+
+      bhX[i] += bhVX[i];
+      bhY[i] += bhVY[i];
+
+      // Draw as pixel (fast)
+      const px2 = Math.round(bhX[i]), py2 = Math.round(bhY[i]);
+      if (px2 >= 0 && px2 < W && py2 >= 0 && py2 < H) {
+        const distFactor = Math.min(1, 80/dist);
+        const alpha = Math.floor(distFactor * 180);
+        // Draw 1–3 pixels for larger particles
+        const sz = Math.max(1, Math.floor(bhSize[i]));
+        for (let sx = 0; sx < sz; sx++) {
+          for (let sy = 0; sy < sz; sy++) {
+            const idx = ((py2+sy)*W + (px2+sx)) * 4;
+            if (idx >= 0 && idx < px.length-3) {
+              px[idx]   = Math.min(255, px[idx]   + bhR[i]);
+              px[idx+1] = Math.min(255, px[idx+1] + bhG[i]);
+              px[idx+2] = Math.min(255, px[idx+2] + bhB[i]);
+              px[idx+3] = Math.min(255, px[idx+3] + alpha);
+            }
+          }
+        }
+      }
     }
 
-    // Draw core black circle (grows with progress)
-    const coreSize = blackholeProg * 28;
-    gCtx.save();
-    const grad = gCtx.createRadialGradient(bx, by, 0, bx, by, coreSize * 1.8);
-    grad.addColorStop(0,   'rgba(0,0,0,0.95)');
-    grad.addColorStop(0.5, 'rgba(0,0,0,0.6)');
-    grad.addColorStop(1,   'rgba(0,0,0,0)');
-    gCtx.fillStyle = grad;
-    gCtx.beginPath();
-    gCtx.arc(bx, by, coreSize * 1.8, 0, Math.PI * 2);
-    gCtx.fill();
-    gCtx.restore();
+    bhOffCtx.putImageData(imgData, 0, 0);
 
-    // Move + draw particles sucking toward fist
-    bhParticles.forEach(p => {
-      p.t = Math.min(1, p.t + p.speed);
-      const eased = easeOut(p.t);
-      const cx = p.x + (bx - p.x) * eased;
-      const cy = p.y + (by - p.y) * eased;
-      // spiral offset
-      const spiral = Math.sin(p.t * Math.PI * 4 + p.spin * 20) * (1 - p.t) * 30;
-      const perpX  = -(by - p.y) / (Math.hypot(bx-p.x, by-p.y)||1) * spiral;
-      const perpY  =  (bx - p.x) / (Math.hypot(bx-p.x, by-p.y)||1) * spiral;
-      const alpha  = (1 - p.t * 0.9) * Math.min(1, blackholeProg * 4);
-      const size   = p.size * (1 - p.t * 0.7);
-      gCtx.save();
-      gCtx.fillStyle = p.col + alpha.toFixed(3) + ')';
-      gCtx.shadowColor = p.col + '0.6)';
-      gCtx.shadowBlur  = size * 2;
-      gCtx.beginPath();
-      gCtx.arc(cx + perpX, cy + perpY, Math.max(0.3, size), 0, Math.PI * 2);
-      gCtx.fill();
-      gCtx.restore();
-    });
+    // Accretion disk glow ring
+    const ringR = 30 + (1-blackholeProg) * 120;
+    const grd   = bhOffCtx.createRadialGradient(bx,by,ringR*0.3,bx,by,ringR*1.8);
+    grd.addColorStop(0,   'rgba(255,255,255,0)');
+    grd.addColorStop(0.4, `rgba(255,240,200,${(0.08+blackholeProg*0.12).toFixed(3)})`);
+    grd.addColorStop(0.7, `rgba(255,220,150,${(0.04+blackholeProg*0.06).toFixed(3)})`);
+    grd.addColorStop(1,   'rgba(0,0,0,0)');
+    bhOffCtx.fillStyle = grd;
+    bhOffCtx.beginPath();
+    bhOffCtx.arc(bx, by, ringR*1.8, 0, Math.PI*2);
+    bhOffCtx.fill();
 
-    // When all particles arrived → trigger book close
+    // Black core (grows)
+    const coreR = 12 + blackholeProg * 55;
+    const coreG = bhOffCtx.createRadialGradient(bx,by,0,bx,by,coreR);
+    coreG.addColorStop(0, 'rgba(0,0,0,1)');
+    coreG.addColorStop(0.6,'rgba(0,0,0,0.95)');
+    coreG.addColorStop(1, 'rgba(0,0,0,0)');
+    bhOffCtx.fillStyle = coreG;
+    bhOffCtx.beginPath();
+    bhOffCtx.arc(bx, by, coreR, 0, Math.PI*2);
+    bhOffCtx.fill();
+
+    // Composite to main canvas
+    gCtx.drawImage(bhOffscreen, 0, 0);
+
     if (blackholeProg >= 1) {
       blackholePhase = 'close';
       blackholeProg  = 0;
-      // Now close the book
-      isOpen = false;
+      isOpen = false; // trigger book close
     }
   }
 
+  /* ─── PHASE: close ─── */
   else if (blackholePhase === 'close') {
-    blackholeProg = Math.min(1, blackholeProg + 0.012);
+    blackholeProg = Math.min(1, blackholeProg + 0.016);
 
-    // Core pulses while book closes
-    const pulse = 28 + Math.sin(blackholeProg * Math.PI * 6) * 8;
-    gCtx.save();
-    const grad2 = gCtx.createRadialGradient(bx, by, 0, bx, by, pulse * 2.5);
-    grad2.addColorStop(0,   `rgba(0,0,0,${0.95 * (1 - blackholeProg * 0.5)})`);
-    grad2.addColorStop(0.6, `rgba(0,0,0,${0.4  * (1 - blackholeProg)})`);
-    grad2.addColorStop(1,   'rgba(0,0,0,0)');
-    gCtx.fillStyle = grad2;
+    // Pulsing core while book shuts
+    const pulse = 60 + Math.sin(blackholeProg * Math.PI * 8) * 15;
+    const cg    = gCtx.createRadialGradient(bx,by,0,bx,by,pulse*2);
+    cg.addColorStop(0,   'rgba(0,0,0,0.98)');
+    cg.addColorStop(0.5, `rgba(0,0,0,${(0.7*(1-blackholeProg*0.7)).toFixed(3)})`);
+    cg.addColorStop(1,   'rgba(0,0,0,0)');
+    gCtx.fillStyle = cg;
     gCtx.beginPath();
-    gCtx.arc(bx, by, pulse * 2.5, 0, Math.PI * 2);
+    gCtx.arc(bx, by, pulse*2, 0, Math.PI*2);
     gCtx.fill();
-    gCtx.restore();
 
     if (blackholeProg >= 1) {
       blackholePhase = 'burst';
       blackholeProg  = 0;
-      // Respawn particles outward (burst)
-      bhParticles = [];
-      for (let i = 0; i < 60; i++) {
-        const a = Math.random() * Math.PI * 2;
-        bhParticles.push({
-          x: bx, y: by,
-          vx: Math.cos(a) * (2 + Math.random() * 5),
-          vy: Math.sin(a) * (2 + Math.random() * 5),
-          size: 0.8 + Math.random() * 2.5,
-          t: 0,
-          col: Math.random() > 0.5 ? 'rgba(255,255,255,' : 'rgba(200,180,140,',
-        });
+      bhSpawnBurst(bx, by);
+    }
+  }
+
+  /* ─── PHASE: burst ─── */
+  else if (blackholePhase === 'burst') {
+    blackholeProg = Math.min(1, blackholeProg + 0.018);
+    const count = BH_COUNT / 4;
+
+    const imgData2 = bhOffCtx.createImageData(W, H);
+    const px2 = imgData2.data;
+
+    for (let i = 0; i < count; i++) {
+      bhX[i] += bhVX[i] * (1 - blackholeProg * 0.6);
+      bhY[i] += bhVY[i] * (1 - blackholeProg * 0.6);
+      const alpha = Math.floor((1 - blackholeProg) * (1 - blackholeProg) * 200);
+      const ix = Math.round(bhX[i]), iy = Math.round(bhY[i]);
+      if (ix>=0&&ix<W&&iy>=0&&iy<H&&alpha>0) {
+        const idx = (iy*W+ix)*4;
+        px2[idx]  =Math.min(255,px2[idx]+bhR[i]);
+        px2[idx+1]=Math.min(255,px2[idx+1]+bhG[i]);
+        px2[idx+2]=Math.min(255,px2[idx+2]+bhB[i]);
+        px2[idx+3]=Math.min(255,px2[idx+3]+alpha);
       }
     }
-  }
+    bhOffCtx.putImageData(imgData2, 0, 0);
+    gCtx.drawImage(bhOffscreen, 0, 0);
 
-  else if (blackholePhase === 'burst') {
-    blackholeProg = Math.min(1, blackholeProg + 0.025);
-    bhParticles.forEach(p => {
-      p.x += p.vx * (1 - blackholeProg * 0.7);
-      p.y += p.vy * (1 - blackholeProg * 0.7);
-      p.t  = blackholeProg;
-      const alpha = (1 - blackholeProg) * 0.8;
-      gCtx.save();
-      gCtx.fillStyle = p.col + alpha.toFixed(3) + ')';
-      gCtx.beginPath();
-      gCtx.arc(p.x, p.y, p.size * (1 - blackholeProg * 0.5), 0, Math.PI * 2);
-      gCtx.fill();
-      gCtx.restore();
-    });
     if (blackholeProg >= 1) {
       blackholePhase = 'done';
-      bhParticles    = [];
     }
   }
 
+  /* ─── PHASE: done ─── */
   else if (blackholePhase === 'done') {
     blackholeActive = false;
     blackholePhase  = 'idle';
-    // Full reset
-    setTimeout(() => fullReset(), 100);
+    setTimeout(() => fullReset(), 80);
   }
 }
 
