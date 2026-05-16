@@ -80,7 +80,6 @@ html,body{width:100%;height:100%;background:#080808;overflow:hidden;font-family:
   transform-origin:center center;
   transform:translate(-50%,-50%) scale(.18);
   opacity:0;z-index:10;
-  /* perspective applied here for 3D children */
 }
 
 /* ── CLOSED BOOK (3D box) ── */
@@ -104,7 +103,6 @@ html,body{width:100%;height:100%;background:#080808;overflow:hidden;font-family:
 .ob-b2{position:absolute;bottom:-12px;left:8px;right:8px;height:8px;background:#ccc9c2;border-radius:0 0 3px 3px;z-index:-1;}
 .ob-b{position:absolute;bottom:-8px;left:4px;right:4px;height:10px;background:linear-gradient(180deg,#e8e5de,#d8d5ce);border-radius:0 0 2px 2px;}
 .ob-rp{position:absolute;right:0;top:0;width:246px;height:300px;background:#f8f7f2;border-radius:0 3px 3px 0;
-  /* subtle page curl shadow */
   box-shadow:-4px 0 12px rgba(0,0,0,.06);}
 .ob-rpi{padding:26px 20px;height:100%;display:flex;flex-direction:column;justify-content:space-between;}
 .plines{display:flex;flex-direction:column;gap:10px;}
@@ -123,7 +121,6 @@ html,body{width:100%;height:100%;background:#080808;overflow:hidden;font-family:
 #fp3{background:#f2f0e9;z-index:3;}
 #fp2{background:#f5f3ec;z-index:4;}
 #fp1{background:#f8f7f2;z-index:5;}
-/* Page shadow when open */
 .ob-cov{position:absolute;left:0;top:0;width:252px;height:300px;transform-origin:right center;transform:rotateY(0deg);transform-style:preserve-3d;z-index:20;}
 .ob-cf{position:absolute;inset:0;background:#1a1917;border-radius:3px 0 0 3px;backface-visibility:hidden;display:flex;align-items:center;justify-content:center;overflow:hidden;}
 .ob-ctx{position:absolute;inset:0;opacity:.035;background:repeating-linear-gradient(90deg,transparent,transparent 12px,rgba(255,255,255,.7) 12px,rgba(255,255,255,.7) 12.5px);}
@@ -134,7 +131,7 @@ html,body{width:100%;height:100%;background:#080808;overflow:hidden;font-family:
 .page-dust{position:fixed;pointer-events:none;border-radius:50%;z-index:45;}
 
 /* ── THANK YOU overlay ── */
-#thankyou-overlay{display:none;position:fixed;inset:0;background:rgba(8,8,8,0);flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:85;transition:background .7s ease;} #thankyou-overlay.show{background:rgba(8,8,8,.88);}
+#thankyou-overlay{display:none;position:fixed;inset:0;background:rgba(8,8,8,0);flex-direction:column;align-items:center;justify-content:center;gap:16px;z-index:85;transition:background .7s ease;}
 #thankyou-overlay.show{display:flex;background:rgba(8,8,8,.88);}
 .ty-mark{font-size:16px;opacity:.35;}
 .ty-title{font-family:Georgia,serif;font-size:14px;color:rgba(255,255,255,.4);letter-spacing:.18em;text-transform:uppercase;}
@@ -150,7 +147,8 @@ html,body{width:100%;height:100%;background:#080808;overflow:hidden;font-family:
 #qr-overlay{display:none;position:fixed;inset:0;background:rgba(8,8,8,.92);flex-direction:column;align-items:center;justify-content:center;gap:20px;z-index:80;}
 #qr-overlay.show{display:flex;}
 .qr-hint{font-size:10px;letter-spacing:.2em;color:rgba(255,255,255,.25);text-transform:uppercase;}
-#qr-frame{background:#f8f6f1;padding:14px;display:inline-flex;align-items:center;justify-content:center;} #qr-canvas svg{display:block;}
+#qr-frame{background:#f8f6f1;padding:14px;display:inline-flex;align-items:center;justify-content:center;}
+#qr-canvas svg{display:block;}
 #qr-canvas{width:120px;height:120px;}
 #qr-url{font-size:9px;color:rgba(255,255,255,.15);letter-spacing:.1em;margin-top:4px;}
 #qr-sid{font-size:9px;color:rgba(255,255,255,.1);letter-spacing:.08em;}
@@ -293,8 +291,8 @@ const GUEST_BASE = location.hostname === 'localhost'
   ? 'http://localhost:3000'
   : `${location.protocol}//${location.host}`;
 
-const LOCK_DURATION  = 3000; // ms — tahan telunjuk untuk lock/close ritual
-const CIRCUMFERENCE  = 301.6; // 2π×48
+const LOCK_DURATION  = 3000;
+const CIRCUMFERENCE  = 301.6;
 
 /* ═══════════════════════════════════
    STATE
@@ -303,59 +301,49 @@ let sessionId = sessionStorage.getItem('sena_sid') || newSid();
 let ws = null, camMode = false;
 let faceDet = null, handsDet = null, mpCam = null;
 
-// Proximity & parallax
 let prox = 0, targetProx = 0;
 let faceX = 0, smoothFX = 0;
 let wigT  = 0;
 
-// Book animation state — all continuous values driven by main loop
 let isOpen   = false;
-let openProg = 0;        // 0=closed → 1=fully open
+let openProg = 0;
 let coverAng = 0;
 let fanAngs  = [0,0,0,0,0];
 
-// Page open spring values — for organic feel
 let coverVel = 0;
 let fanVels  = [0,0,0,0,0];
 
-// Slight floating on open book
 let floatPhase = 0;
 
-// Gesture
-let gesture = 'none'; // none | pointing | open5 | peace | fist
+let gesture = 'none';
 let lastHandLM = null;
 
-// Phase machine:
-// idle → locked → opening → open → waiting_close → closing → done(reset)
 let phase = 'idle';
-let hasWritten = false;  // true only after text received from HP
+let hasWritten = false;
 
-// Countdown (shared for lock + close ritual)
 let holdActive    = false;
 let holdStartTime = null;
 let holdInterval  = null;
-let holdMode      = 'lock'; // 'lock' | 'close'
+let holdMode      = 'lock';
 
-// Peace/QR countdown state
 let peaceCooldown    = 0;
 let qrVisible        = false;
-let qrPhase          = 'idle'; // idle | opening | open | closing
+let qrPhase          = 'idle';
 let qrHoldStart      = null;
 let qrHoldInterval   = null;
 const QR_HOLD_MS     = 3000;
 let peaceBlinkT      = 0;
 
-// Fist close gate — must hold ☝ first, then fist
 let closeGate = false;
 let fistCooldown = 0;
 
-// ── Blackhole close animation state ──
-let blackholeActive = false;  // true when fist triggered close animation
-let blackholePhase  = 'idle'; // idle | suck | close | burst | done
-let blackholeProg   = 0;      // 0→1
-let blackholeX      = 0;      // fist wrist position on screen
+/* ── Blackhole close animation state ── */
+let blackholeActive = false;
+let blackholePhase  = 'idle';
+let blackholeProg   = 0;
+let blackholeX      = 0;
 let blackholeY      = 0;
-let bhParticles     = [];     // active particle objects
+let bhParticles     = []; // legacy — kept for compat, not used in render
 
 /* ═══════════════════════════════════
    ELEMENTS
@@ -396,7 +384,6 @@ function connectWS() {
     ws.onopen = () => {
       document.getElementById('ws-badge').textContent = '#' + sessionId;
       refreshQR();
-      // Keepalive ping every 25s — prevents Railway idle timeout
       clearInterval(wsPingInterval);
       wsPingInterval = setInterval(() => {
         if (ws && ws.readyState === WebSocket.OPEN) {
@@ -410,12 +397,10 @@ function connectWS() {
       try { msg = JSON.parse(e.data); } catch { return; }
       if (msg.type === 'guest_joined') hint('— tamu terhubung, menunggu tulisan —');
       if (msg.type === 'write')        receiveText(msg.title, msg.body);
-      // pong: server still alive, do nothing
     };
 
     ws.onclose = () => {
       clearInterval(wsPingInterval);
-      // Reconnect — use same sessionId so guest can still deliver
       setTimeout(connectWS, 2000);
     };
 
@@ -444,35 +429,27 @@ window.addEventListener('resize', resizeCanvas);
   if (peaceCooldown > 0) peaceCooldown--;
   if (fistCooldown  > 0) fistCooldown--;
 
-  // Scale: far=0.18 → close=0.9
   const scaleT  = easeOut(Math.min(1, prox));
   const scale   = lerp(0.18, 1.05, scaleT);
   const opacity = Math.max(0, Math.min(1, (prox - 0.1) / 0.18));
   scene.style.opacity = opacity.toFixed(3);
   farHint.style.opacity = Math.max(0, 1 - prox * 5).toFixed(3);
 
-  // Parallax X from face position
   const parallaxX = -smoothFX * 55;
 
-  // Ambient wiggle — very subtle
   const breathY = Math.sin(wigT * 0.45) * 0.25;
   const breathZ = Math.cos(wigT * 0.28) * 0.15;
 
-  // ── OPEN ANIMATION — spring physics ──
   const openTarget = isOpen ? 1 : 0;
 
   if (isOpen) {
-    // Spring towards open
-    // Cover: spring to -166
     const coverTarget = -166;
     const coverForce  = (coverTarget - coverAng) * 0.035;
     coverVel = (coverVel + coverForce) * 0.82;
     coverAng += coverVel;
 
-    // Fan pages: staggered springs with slight overshoot
     const fanTargets = [-7, -15, -24, -33, -42];
     fps.forEach((fp, i) => {
-      const delay  = i * 0.08;
       const tgt    = fanTargets[i];
       const force  = (tgt - fanAngs[i]) * (0.028 + i * 0.004);
       fanVels[i]   = (fanVels[i] + force) * (0.80 - i * 0.01);
@@ -480,11 +457,9 @@ window.addEventListener('resize', resizeCanvas);
       fp.style.transform = `rotateY(${fanAngs[i].toFixed(2)}deg)`;
     });
 
-    // Floating motion on open book
     const floatY = Math.sin(floatPhase) * 3;
     const floatRX = Math.sin(floatPhase * 0.7) * 0.4 + breathY;
   } else {
-    // Spring towards closed
     const coverForce = (0 - coverAng) * 0.05;
     coverVel = (coverVel + coverForce) * 0.78;
     coverAng += coverVel;
@@ -498,7 +473,6 @@ window.addEventListener('resize', resizeCanvas);
   }
   obCover.style.transform = `rotateY(${coverAng.toFixed(2)}deg)`;
 
-  // openProg for closed↔open swap (lerp from coverAng)
   openProg = Math.max(0, Math.min(1, Math.abs(coverAng) / 166));
 
   if (openProg < 0.07) {
@@ -510,7 +484,6 @@ window.addEventListener('resize', resizeCanvas);
     closedBook.style.opacity = '0'; openBook.style.opacity = '1';
   }
 
-  // Float on open book
   const floatY  = isOpen ? Math.sin(floatPhase) * 2.5 : 0;
   const floatRX = isOpen ? (Math.sin(floatPhase * 0.65) * 0.35 + breathY) : breathY;
 
@@ -540,7 +513,6 @@ function drawOverlay() {
   const px = lmk => (1 - lmk.x) * W;
   const py = lmk => lmk.y * H;
 
-  // Thin skeleton
   const CONN = [
     [0,1],[1,2],[2,3],[3,4],
     [0,5],[5,6],[6,7],[7,8],
@@ -561,7 +533,6 @@ function drawOverlay() {
     gCtx.beginPath(); gCtx.arc(px(lmk),py(lmk),2,0,Math.PI*2); gCtx.fill();
   });
 
-  // ☝ Pointing — subtle glow dot on tip only
   if (gesture === 'pointing') {
     const tip = lm[8];
     const col = holdActive ? 'rgba(74,222,128,.9)' : 'rgba(255,255,255,.45)';
@@ -573,7 +544,6 @@ function drawOverlay() {
     gCtx.restore();
   }
 
-  // ✌ Peace — two finger tips, blink when counting
   if (gesture === 'peace') {
     peaceBlinkT += 0.18;
     const blink = (qrPhase === 'opening' || qrPhase === 'closing')
@@ -586,7 +556,6 @@ function drawOverlay() {
       gCtx.beginPath(); gCtx.arc(px(lm[i]),py(lm[i]),6,0,Math.PI*2); gCtx.fill();
       gCtx.restore();
     });
-    // Draw countdown arc around index tip
     if ((qrPhase === 'opening' || qrPhase === 'closing') && qrHoldStart) {
       const prog = Math.min(1, (Date.now() - qrHoldStart) / QR_HOLD_MS);
       const tip  = lm[8];
@@ -604,7 +573,6 @@ function drawOverlay() {
     peaceBlinkT = 0;
   }
 
-  // ✋ Open5 — all fingertips
   if (gesture === 'open5') {
     [4,8,12,16,20].forEach(i => {
       gCtx.save();
@@ -615,7 +583,6 @@ function drawOverlay() {
     });
   }
 
-  // ✊ Fist — dim circle on wrist
   if (gesture === 'fist') {
     const w = lm[0];
     const col = closeGate ? 'rgba(255,120,100,.8)' : 'rgba(255,255,255,.2)';
@@ -625,19 +592,18 @@ function drawOverlay() {
 }
 
 function drawDetectionZone() {
-  // Removed — no visual indicator needed
+  // No visual indicator — removed intentionally
 }
 
-/* ── BLACKHOLE ANIMATION ── high-perf version ──
-   Uses offscreen canvas + Float32Array for 80k particles
-   Phases: suck (spiral inward) → close (book shuts) → burst → done
-───────────────────────────────────────────────────── */
+/* ═══════════════════════════════════════════════════════
+   BLACKHOLE ANIMATION — 80k typed-array particles
+   FIX: startBlackholeAnimation() now correctly calls
+        bhSpawnSuck() instead of spawning legacy objects
+═══════════════════════════════════════════════════════ */
 
-// Offscreen canvas for particle compositing
 let bhOffscreen   = null;
 let bhOffCtx      = null;
-const BH_COUNT    = 80000; // 80k particles
-// Typed arrays — much faster than object arrays
+const BH_COUNT    = 80000;
 let bhX, bhY, bhVX, bhVY, bhAge, bhLife, bhR, bhG, bhB, bhSize;
 let bhInitialized = false;
 
@@ -661,39 +627,33 @@ function bhSpawnSuck(bx, by) {
   const W = gCanvas.width, H = gCanvas.height;
   const cx = W / 2, cy = H / 2;
   for (let i = 0; i < BH_COUNT; i++) {
-    // Distribute from edges and full screen
     const ring = Math.random();
     let x, y;
     if (ring < 0.3) {
-      // From edges
       const side = Math.floor(Math.random() * 4);
       if (side === 0) { x = Math.random()*W; y = -5; }
       else if (side === 1) { x = W+5; y = Math.random()*H; }
       else if (side === 2) { x = Math.random()*W; y = H+5; }
       else { x = -5; y = Math.random()*H; }
     } else {
-      // Scattered across full screen
       x = (Math.random() - 0.5) * W * 2.2 + cx;
       y = (Math.random() - 0.5) * H * 2.2 + cy;
     }
     bhX[i] = x;
     bhY[i] = y;
 
-    // Velocity: tangential (spiral) + slight inward
     const dx = bx - x, dy = by - y;
     const dist = Math.sqrt(dx*dx + dy*dy) || 1;
     const nx = dx/dist, ny = dy/dist;
-    // perpendicular (for spiral)
     const tx = -ny, ty = nx;
     const spinDir = Math.random() > 0.5 ? 1 : -1;
     const speed = 0.3 + Math.random() * 1.2;
     bhVX[i] = tx * speed * spinDir * 0.6;
     bhVY[i] = ty * speed * spinDir * 0.6;
-    bhAge[i]  = Math.random(); // stagger start 0-1
+    bhAge[i]  = Math.random();
     bhLife[i] = 0.6 + Math.random() * 0.4;
     bhSize[i] = 0.4 + Math.random() * 1.4;
 
-    // Colors: white + warm gold mix
     if (Math.random() > 0.4) {
       const v = 180 + Math.floor(Math.random()*75);
       bhR[i] = v; bhG[i] = v; bhB[i] = v;
@@ -707,7 +667,7 @@ function bhSpawnSuck(bx, by) {
 
 function bhSpawnBurst(bx, by) {
   bhInit();
-  const count = BH_COUNT / 4; // burst = 20k
+  const count = BH_COUNT / 4;
   for (let i = 0; i < BH_COUNT; i++) {
     if (i < count) {
       const a = Math.random() * Math.PI * 2;
@@ -721,7 +681,6 @@ function bhSpawnBurst(bx, by) {
       const v = 150 + Math.floor(Math.random()*105);
       bhR[i]=v; bhG[i]=v; bhB[i]=v;
     } else {
-      // park unused
       bhX[i]=-9999; bhY[i]=-9999; bhLife[i]=0;
     }
   }
@@ -732,7 +691,6 @@ function updateBlackhole() {
   const bx = blackholeX, by = blackholeY;
   const W  = gCanvas.width,  H = gCanvas.height;
 
-  // Create/resize offscreen canvas
   if (!bhOffscreen || bhOffscreen.width !== W || bhOffscreen.height !== H) {
     bhOffscreen = new OffscreenCanvas(W, H);
     bhOffCtx    = bhOffscreen.getContext('2d');
@@ -741,18 +699,15 @@ function updateBlackhole() {
 
   /* ─── PHASE: suck ─── */
   if (blackholePhase === 'suck') {
-    blackholeProg = Math.min(1, blackholeProg + 0.004); // ~4s
+    blackholeProg = Math.min(1, blackholeProg + 0.004);
 
-    // Gravity strength grows with progress
     const G = 0.04 + blackholeProg * 0.18;
     let allIn = true;
 
-    // ImageData for fast pixel writing
     const imgData = bhOffCtx.createImageData(W, H);
     const px = imgData.data;
 
     for (let i = 0; i < BH_COUNT; i++) {
-      // stagger: particle activates when prog > bhAge
       if (blackholeProg < bhAge[i] * 0.7) continue;
 
       const dx = bx - bhX[i];
@@ -761,36 +716,30 @@ function updateBlackhole() {
       const dist  = Math.sqrt(dist2) || 1;
 
       if (dist < 6) {
-        // absorbed
         bhX[i] = -9999; bhY[i] = -9999;
         continue;
       }
       allIn = false;
 
-      // Gravity pull
       const f = G / (dist * 0.04 + 1);
       bhVX[i] += dx/dist * f;
       bhVY[i] += dy/dist * f;
 
-      // Tangential (orbital) speed maintenance
       const tx = -dy/dist, ty = dx/dist;
       const tanSpeed = Math.sqrt(bhVX[i]*bhVX[i]+bhVY[i]*bhVY[i]) * 0.012;
       bhVX[i] += tx * tanSpeed;
       bhVY[i] += ty * tanSpeed;
 
-      // Speed cap
       const speed = Math.sqrt(bhVX[i]*bhVX[i]+bhVY[i]*bhVY[i]);
       if (speed > 14) { bhVX[i] *= 14/speed; bhVY[i] *= 14/speed; }
 
       bhX[i] += bhVX[i];
       bhY[i] += bhVY[i];
 
-      // Draw as pixel (fast)
       const px2 = Math.round(bhX[i]), py2 = Math.round(bhY[i]);
       if (px2 >= 0 && px2 < W && py2 >= 0 && py2 < H) {
         const distFactor = Math.min(1, 80/dist);
         const alpha = Math.floor(distFactor * 180);
-        // Draw 1–3 pixels for larger particles
         const sz = Math.max(1, Math.floor(bhSize[i]));
         for (let sx = 0; sx < sz; sx++) {
           for (let sy = 0; sy < sz; sy++) {
@@ -808,7 +757,6 @@ function updateBlackhole() {
 
     bhOffCtx.putImageData(imgData, 0, 0);
 
-    // Accretion disk glow ring
     const ringR = 30 + (1-blackholeProg) * 120;
     const grd   = bhOffCtx.createRadialGradient(bx,by,ringR*0.3,bx,by,ringR*1.8);
     grd.addColorStop(0,   'rgba(255,255,255,0)');
@@ -820,7 +768,6 @@ function updateBlackhole() {
     bhOffCtx.arc(bx, by, ringR*1.8, 0, Math.PI*2);
     bhOffCtx.fill();
 
-    // Black core (grows)
     const coreR = 12 + blackholeProg * 55;
     const coreG = bhOffCtx.createRadialGradient(bx,by,0,bx,by,coreR);
     coreG.addColorStop(0, 'rgba(0,0,0,1)');
@@ -831,13 +778,12 @@ function updateBlackhole() {
     bhOffCtx.arc(bx, by, coreR, 0, Math.PI*2);
     bhOffCtx.fill();
 
-    // Composite to main canvas
     gCtx.drawImage(bhOffscreen, 0, 0);
 
     if (blackholeProg >= 1) {
       blackholePhase = 'close';
       blackholeProg  = 0;
-      isOpen = false; // trigger book close
+      isOpen = false;
     }
   }
 
@@ -845,7 +791,6 @@ function updateBlackhole() {
   else if (blackholePhase === 'close') {
     blackholeProg = Math.min(1, blackholeProg + 0.016);
 
-    // Pulsing core while book shuts
     const pulse = 60 + Math.sin(blackholeProg * Math.PI * 8) * 15;
     const cg    = gCtx.createRadialGradient(bx,by,0,bx,by,pulse*2);
     cg.addColorStop(0,   'rgba(0,0,0,0.98)');
@@ -904,12 +849,9 @@ function updateBlackhole() {
    FACE MESH → PROXIMITY + PARALLAX
 ═══════════════════════════════════ */
 function onFace(res) {
-  // Once book is open (phase >= locked), face detection only drives parallax
-  // Proximity is LOCKED — book stays visible regardless of face
   const phaseLocked = (phase === 'locked' || phase === 'open' || phase === 'waiting_close');
 
   if (!res.multiFaceLandmarks?.length) {
-    // Only fade book if still in idle phase
     if (!phaseLocked) targetProx = Math.max(0, targetProx - 0.01);
     gdFace.classList.remove('on'); return;
   }
@@ -920,10 +862,8 @@ function onFace(res) {
   const fw = Math.abs(rc.x - lc.x);
 
   if (!phaseLocked) {
-    // Normal proximity drive — only in idle
     targetProx = Math.max(0, Math.min(1, (fw - 0.07) / (0.40 - 0.07)));
   } else {
-    // Book locked open — keep prox pinned at 1, just update parallax
     targetProx = 1.0;
   }
   const nose = lm[1];
@@ -939,7 +879,6 @@ function classifyHand(lm) {
   const rt=lm[16], rp=lm[14];
   const pt=lm[20], pp=lm[18];
 
-  // Relaxed thresholds — more forgiving
   const iExt = it.y < ip.y - 0.022;
   const mExt = mt.y < mp.y - 0.018;
   const rExt = rt.y < rp.y - 0.015;
@@ -971,13 +910,9 @@ function onHands(res) {
 
   const lm = res.multiHandLandmarks[0];
 
-  // RIGHT HAND ONLY: in mirrored webcam, right hand appears on LEFT side of frame (x < 0.55)
-  // Left hand (x > 0.55) is ignored to prevent accidental triggers
+  // Right hand only — in mirrored webcam right hand = left side of frame (x < 0.60)
   const wristX = lm[0].x;
-  if (wristX > 0.60) {
-    // Left hand detected — ignore completely, don't clear gesture state
-    return;
-  }
+  if (wristX > 0.60) return;
 
   lastHandLM = lm;
   gesture = classifyHand(lm);
@@ -987,11 +922,11 @@ function onHands(res) {
   gdPeace.classList.toggle('on', gesture==='peace');
   gdFist.classList.toggle('on',  gesture==='fist');
 
-  /* ── PHOTO SAFE or BLACKHOLE: block all gesture processing ── */
+  /* ── Block during photo_safe or blackhole ── */
   if (phase === 'photo_safe') return;
   if (blackholeActive) return;
 
-  /* ── PHASE: idle → ☝ 3s → lock ── */
+  /* ── idle → ☝ 3s → lock ── */
   if (phase === 'idle') {
     if (gesture === 'pointing' && prox > 0.40) {
       if (!holdActive) startHold('lock');
@@ -1000,13 +935,13 @@ function onHands(res) {
     }
   }
 
-  /* ── PHASE: locked → ✋ buka buku ── */
+  /* ── locked → ✋ buka buku ── */
   if (phase === 'locked') {
     if (gesture === 'open5') triggerOpen();
     if (gesture !== 'pointing') cancelHold();
   }
 
-  /* ── PHASE: open ── */
+  /* ── open ── */
   if (phase === 'open') {
     if (gesture === 'peace') {
       if (qrPhase === 'idle') startQRHold('opening');
@@ -1024,7 +959,7 @@ function onHands(res) {
     }
   }
 
-  /* ── PHASE: waiting_close → ✊ tutup buku ── */
+  /* ── waiting_close → ✊ tutup buku ── */
   if (phase === 'waiting_close') {
     if (gesture === 'fist' && fistCooldown === 0) {
       fistCooldown = 40;
@@ -1096,16 +1031,22 @@ function triggerOpen() {
   isOpen  = true;
   phase   = 'open';
   lockBadge.classList.remove('show');
-  // Spawn dust particles for organic feel
   spawnPageDust();
   doRipple();
   hint('— ✌ 2 jari untuk QR code —');
   setSlabel('— terbuka —', true);
 }
 
+/* ─────────────────────────────────────────────────────
+   triggerClose — FIX: guard against double-trigger
+   Blackhole animasi sekarang benar-benar dipanggil via
+   bhSpawnSuck() di dalam startBlackholeAnimation()
+───────────────────────────────────────────────────── */
 function triggerClose() {
-  // Don't do immediate fade — start blackhole animation instead
-  // Get fist position from last hand landmark (wrist, mirrored)
+  // Guard: jangan trigger kalau animasi sudah jalan
+  if (blackholeActive) return;
+
+  // Ambil posisi kepalan dari wrist landmark
   if (lastHandLM) {
     const lm = lastHandLM;
     blackholeX = (1 - lm[0].x) * innerWidth;
@@ -1117,30 +1058,21 @@ function triggerClose() {
   startBlackholeAnimation();
 }
 
+/* ─────────────────────────────────────────────────────
+   startBlackholeAnimation — FIX (root cause)
+   Versi lama spawn 120 legacy bhParticles objek yang
+   TIDAK digunakan oleh updateBlackhole() (yang pakai
+   typed arrays). Sekarang langsung panggil bhSpawnSuck()
+   agar typed arrays terisi dengan benar.
+───────────────────────────────────────────────────── */
 function startBlackholeAnimation() {
   blackholeActive = true;
   blackholePhase  = 'suck';
   blackholeProg   = 0;
-  bhParticles     = [];
+  bhParticles     = []; // legacy — dibersihkan tapi tidak dipakai render
 
-  // Spawn particles from random positions across screen
-  const count = 120;
-  for (let i = 0; i < count; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const dist  = 200 + Math.random() * Math.max(innerWidth, innerHeight) * 0.6;
-    bhParticles.push({
-      x:    innerWidth  * 0.5 + Math.cos(angle) * dist * (0.5 + Math.random()),
-      y:    innerHeight * 0.5 + Math.sin(angle) * dist * (0.3 + Math.random()),
-      size: 1 + Math.random() * 3.5,
-      speed:0.018 + Math.random() * 0.022,
-      t:    Math.random(),          // stagger delay 0–1
-      col:  Math.random() > 0.6     // mix white and warm particles
-            ? `rgba(255,255,255,`
-            : `rgba(${180+Math.floor(Math.random()*40)},${140+Math.floor(Math.random()*30)},${80+Math.floor(Math.random()*30)},`,
-      angle: angle,
-      spin:  (Math.random() - 0.5) * 0.04,
-    });
-  }
+  // ✅ FIX: spawn typed-array particles untuk render yang sebenarnya
+  bhSpawnSuck(blackholeX, blackholeY);
 }
 
 /* Page dust particles on book open */
@@ -1184,7 +1116,7 @@ function setSlabel(text, green) {
    QR COUNTDOWN (peace hold 3s)
 ═══════════════════════════════════ */
 function startQRHold(mode) {
-  if (qrHoldInterval) return; // already running
+  if (qrHoldInterval) return;
   qrPhase    = mode;
   qrHoldStart = Date.now();
   hint(mode === 'opening' ? '— ✌ tahan untuk buka QR... —' : '— ✌ tahan untuk tutup QR... —');
@@ -1208,7 +1140,6 @@ function startQRHold(mode) {
 
 function cancelQRHold() {
   if (qrHoldInterval) { clearInterval(qrHoldInterval); qrHoldInterval = null; }
-  // Revert phase if mid-countdown
   if (qrPhase === 'opening') { qrPhase = 'idle'; hint('— ✌ 2 jari untuk QR code —'); }
   if (qrPhase === 'closing') { qrPhase = 'open'; hint('— ✌ tahan 3s untuk tutup QR —'); }
 }
@@ -1230,7 +1161,6 @@ function drawQR(url) {
   const el = document.getElementById('qr-canvas');
   if (!el) return;
   el.innerHTML = '';
-  // Use QRCode API from qrcode.js (loaded below)
   if (typeof qrcode === 'undefined') { setTimeout(() => drawQR(url), 300); return; }
   try {
     const qr = qrcode(0, 'M');
@@ -1261,23 +1191,17 @@ function drawQR(url) {
    RECEIVE TEXT
 ═══════════════════════════════════ */
 function receiveText(title, body) {
-  // ── Works from ANY phase — even if QR is open or hands are busy ──
-
-  // 1. Force book open and lock it
+  // Works from ANY phase — even if QR open or hands busy
   isOpen = true;
   targetProx = 1.0;
-  phase = 'photo_safe'; // special phase: nothing can disturb this
+  phase = 'photo_safe';
   hasWritten = true;
 
-  // 2. Cancel any in-progress hold/countdown
   cancelHold();
   cancelQRHold();
-
-  // 3. Close QR overlay
   hideQR();
   qrPhase = 'idle';
 
-  // 4. Write text to book page
   const pgTitle = document.getElementById('pg-title');
   const pgBody  = document.getElementById('pg-body');
   const pgLines = document.getElementById('pg-lines');
@@ -1285,7 +1209,6 @@ function receiveText(title, body) {
   if (pgBody)  { pgBody.textContent  = body;  pgBody.style.display  = 'block'; }
   if (pgLines)  pgLines.style.display = 'none';
 
-  // 5. Show thank you overlay
   const tyName = document.getElementById('ty-name');
   const tyBody = document.getElementById('ty-body');
   const ty     = document.getElementById('thankyou-overlay');
@@ -1297,11 +1220,9 @@ function receiveText(title, body) {
     setTimeout(() => {
       ty.classList.remove('show');
       setTimeout(() => { ty.style.display = 'none'; }, 700);
-      // Enter photo safe mode hints
       hint('— ambil foto sesukamu — ☝ tahan 3 detik untuk menutup —');
       setSlabel('— tulisan ada di halaman —', true);
       if (closeRitual) closeRitual.classList.add('show');
-      // Transition from photo_safe → open (allow close ritual)
       phase = 'open';
     }, 4000);
   }
@@ -1327,6 +1248,7 @@ function fullReset() {
   closeRitual.classList.remove('show');
   hideQR();
   document.getElementById('thankyou-overlay').classList.remove('show');
+  document.getElementById('thankyou-overlay').style.display = 'none';
   document.getElementById('pg-title').textContent=''; document.getElementById('pg-title').style.display='none';
   document.getElementById('pg-body').textContent='';  document.getElementById('pg-body').style.display='none';
   document.getElementById('pg-lines').style.display='flex';
@@ -1362,7 +1284,6 @@ async function startCam() {
     mpCam = new Camera(vid, {
       onFrame: async () => {
         frame++;
-        // Face every 3 frames, hands every other frame
         if      (frame % 3 === 0) await faceDet.send({ image: vid });
         else                       await handsDet.send({ image: vid });
       },
